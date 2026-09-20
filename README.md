@@ -180,6 +180,27 @@ input and showed a turn-ending step only the previous step's results produced th
 `tool.unsupported_claim` hotspots (0.77 to 0.87) on final summaries; adding the call input
 and a bounded digest of the turn's earlier results brought those to 0.25 to 0.50.
 
+### A broader run
+
+The same detector over every local `dsh` session root (74 sessions, 4,068 assistant
+steps, 18,656 probes, no failed windows, about 8.2M input tokens) flags 16.7% of windows at
+the 0.7 threshold, and a manual sample of those hotspots puts precision well below the small
+run. The misses are not calibration: they trace to four gaps in what the window shows the
+judge, each measurable in the run.
+
+| cause | evidence |
+| --- | --- |
+| interrupted turns read as the assistant stopping early | 28 of 30 `goal.premature_stop` hotspots sit on turns whose `turn_end` reason is `aborted` or `error`; 25 end on a tool call |
+| text-less steps judged off task from raw tool arguments | 262 of 268 `user.off_task` hotspots are steps with no text; 164 follow a short follow-up message such as "continue" that hides the original request |
+| summaries checked against bookkeeping results | 47 of 207 `tool.unsupported_claim` hotspots respond to `send_message`, `todo_write`, or `list_agents` output; 30 more are turn-ending summaries of turns longer than 20 steps, beyond the evidence budget |
+| harmless errors counted as ignored | 66 of 192 `tool.ignored_error` hotspots are missing-skill lookups; 94 are silent workarounds where the next tool call is the handling |
+
+The fixes are all in windowing and preconditions: carry the turn-end reason and ask
+`goal.premature_stop` only on completed turns, ask `user.off_task` only when the step has
+text and let `tool.unjustified_call` cover call-only steps, include the earlier human
+messages of a session as bounded context, exclude bookkeeping tools from evidence, and treat
+a missing skill as a lookup miss rather than a failure.
+
 ## License
 
 Distributed under the GNU General Public License, version 3 or later
