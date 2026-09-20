@@ -96,16 +96,26 @@ class Transcript:
 
     def turn_numbers(self) -> list[int]:
         """Distinct turn numbers in ascending order."""
-        raise NotImplementedError
+        return sorted({event.turn for event in self.events})
 
     def assistant_steps(self) -> list[AssistantEvent]:
         """All assistant events in seq order."""
-        raise NotImplementedError
+        steps = [event for event in self.events if isinstance(event, AssistantEvent)]
+        return sorted(steps, key=lambda event: event.seq)
 
 
 def header_to_record(header: TranscriptHeader) -> dict[str, Any]:
     """Canonical JSONL header line as a dict (key order: kind, transcript_id, harness, ...)."""
-    raise NotImplementedError
+    return {
+        "kind": "transcript",
+        "transcript_id": header.transcript_id,
+        "harness": header.harness,
+        "source_path": header.source_path,
+        "model": header.model,
+        "provider": header.provider,
+        "cwd": header.cwd,
+        "created_at": header.created_at,
+    }
 
 
 def event_to_record(event: Event) -> dict[str, Any]:
@@ -117,14 +127,108 @@ def event_to_record(event: Event) -> dict[str, Any]:
     system: {"kind","seq","turn","step","text"}
     turn_end: {"kind","seq","turn","reason"}
     """
-    raise NotImplementedError
+    if isinstance(event, SystemEvent):
+        return {
+            "kind": "system",
+            "seq": event.seq,
+            "turn": event.turn,
+            "step": event.step,
+            "text": event.text,
+        }
+    if isinstance(event, UserEvent):
+        return {
+            "kind": "user",
+            "seq": event.seq,
+            "turn": event.turn,
+            "text": event.text,
+            "origin": event.origin,
+        }
+    if isinstance(event, AssistantEvent):
+        return {
+            "kind": "assistant",
+            "seq": event.seq,
+            "turn": event.turn,
+            "step": event.step,
+            "text": event.text,
+            "tool_calls": [
+                {"call_id": call.call_id, "name": call.name, "arguments": call.arguments}
+                for call in event.tool_calls
+            ],
+            "stop_reason": event.stop_reason,
+        }
+    if isinstance(event, ToolResultEvent):
+        return {
+            "kind": "tool_result",
+            "seq": event.seq,
+            "turn": event.turn,
+            "step": event.step,
+            "call_id": event.call_id,
+            "name": event.name,
+            "text": event.text,
+            "is_error": event.is_error,
+        }
+    if isinstance(event, TurnEndEvent):
+        return {
+            "kind": "turn_end",
+            "seq": event.seq,
+            "turn": event.turn,
+            "reason": event.reason,
+        }
+    raise ValueError(f"unknown event type: {type(event).__name__}")
 
 
 def record_to_header(record: dict[str, Any]) -> TranscriptHeader:
     """Inverse of header_to_record. Raises ValueError if kind != "transcript"."""
-    raise NotImplementedError
+    kind = record.get("kind")
+    if kind != "transcript":
+        raise ValueError(f"expected a transcript header, got kind={kind!r}")
+    return TranscriptHeader(
+        transcript_id=record["transcript_id"],
+        harness=record["harness"],
+        source_path=record["source_path"],
+        model=record.get("model"),
+        provider=record.get("provider"),
+        cwd=record.get("cwd"),
+        created_at=record.get("created_at"),
+    )
 
 
 def record_to_event(record: dict[str, Any]) -> Event:
     """Inverse of event_to_record. Raises ValueError on unknown kind."""
-    raise NotImplementedError
+    kind = record.get("kind")
+    if kind == "system":
+        return SystemEvent(
+            seq=record["seq"], turn=record["turn"], step=record["step"], text=record["text"]
+        )
+    if kind == "user":
+        return UserEvent(
+            seq=record["seq"],
+            turn=record["turn"],
+            text=record["text"],
+            origin=record.get("origin", "human"),
+        )
+    if kind == "assistant":
+        return AssistantEvent(
+            seq=record["seq"],
+            turn=record["turn"],
+            step=record["step"],
+            text=record["text"],
+            tool_calls=tuple(
+                ToolCall(call["call_id"], call["name"], call["arguments"])
+                for call in record.get("tool_calls") or ()
+            ),
+            stop_reason=record.get("stop_reason"),
+        )
+    if kind == "tool_result":
+        return ToolResultEvent(
+            seq=record["seq"],
+            turn=record["turn"],
+            step=record["step"],
+            call_id=record["call_id"],
+            name=record["name"],
+            text=record["text"],
+            is_error=bool(record.get("is_error", False)),
+        )
+    if kind == "turn_end":
+        return TurnEndEvent(seq=record["seq"], turn=record["turn"], reason=record["reason"])
+    raise ValueError(f"unknown event kind: {kind!r}")

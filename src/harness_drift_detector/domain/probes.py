@@ -133,10 +133,11 @@ CATALOG: dict[str, Probe] = {
 ERROR_MARKERS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\[exit code: (?!0\])\d+\]"),
     re.compile(r"\bTraceback \(most recent call last\)"),
-    re.compile(r"\b[Ee]rror:"),
+    # no word boundary: `ValueError:`, `OSError:` and friends are failures too
+    re.compile(r"[Ee]rror:"),
     re.compile(r"\bFAILED\b"),
     re.compile(r"command not found"),
-    re.compile(r"No such file or directory"),
+    re.compile(r"No such file"),
     re.compile(r"Permission denied"),
 )
 
@@ -144,7 +145,7 @@ QUESTION_TOOL_NAMES: frozenset[str] = frozenset({"ask_user_question", "AskUserQu
 
 
 def has_error_marker(text: str) -> bool:
-    raise NotImplementedError
+    return any(marker.search(text) for marker in ERROR_MARKERS)
 
 
 def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
@@ -161,4 +162,28 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
     - goal.unnecessary_question: any call.tool in QUESTION_TOOL_NAMES, or (ends_turn and
       assistant_text.rstrip().endswith("?"))
     """
-    raise NotImplementedError
+    from_tools = window.previous_message.source == "tools"
+    results = window.previous_message.results if from_tools else ()
+    has_text = window.assistant_text.strip() != ""
+    asks_question = any(
+        call.tool in QUESTION_TOOL_NAMES for call in window.tool_calls
+    ) or (window.ends_turn and window.assistant_text.rstrip().endswith("?"))
+
+    preconditions: dict[str, bool] = {
+        "user.off_task": True,
+        "adjacent.ignores_previous": True,
+        "adjacent.self_discontinuity": window.previous_assistant_text != "",
+        "tool.unsupported_claim": from_tools and has_text,
+        "tool.ignored_error": from_tools
+        and any(result.is_error or has_error_marker(result.text) for result in results),
+        "tool.unjustified_call": len(window.tool_calls) > 0,
+        "goal.premature_stop": window.ends_turn,
+        "goal.unnecessary_question": asks_question,
+        "drift.degree": True,
+    }
+
+    return [
+        probe
+        for probe_id, probe in CATALOG.items()
+        if preconditions.get(probe_id, True) and (only is None or probe_id in only)
+    ]
