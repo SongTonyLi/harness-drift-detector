@@ -25,7 +25,7 @@ class Judge(Protocol):
 2. Measure latency with `time.perf_counter()` and fill `Usage` from the provider response when available.
 3. Write `tests/adapters/test_<name>_judge.py`: translation of probes to requests, translation of a hand-built response to judgments with the normalization above, and `judge()` against an injected fake client. If the provider needs a key, add a `live`-marked test that skips without it.
 4. Register the provider in `cli.py`'s judge factory so `--judge <name>` selects it; `CachingJudge` wraps every provider unless `--no-cache`.
-5. Add a row to README's provider table and, if the provider changes a design assumption (for example a cascade that escalates flagged windows), an Agent Note.
+5. Name the provider in `docs/cli.md` under `--judge` and, if it changes a design assumption (for example a cascade that escalates flagged windows), an Agent Note.
 6. Run `uv run pytest tests/adapters/test_<name>_judge.py tests/application/test_detect.py -q` and `uv run python scripts/verify_layering.py`.
 
 ## Do not

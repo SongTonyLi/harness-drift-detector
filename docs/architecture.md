@@ -52,6 +52,6 @@ Nine probes in `domain/probes.py`: `user.off_task`, `adjacent.ignores_previous`,
 
 ## Extension points
 
-- **Judge provider:** implement `Judge` (`name`, `model`, `async judge(state, probes) -> JudgeResult`) in `adapters/`, register in `cli.py`. See [hdd-add-judge-provider](../.agents/skills/hdd-add-judge-provider/SKILL.md).
-- **Harness source:** implement `TranscriptSource` (`harness`, `list_ids()`, `load(id)`) in `adapters/`, add a `--harness` choice.
+- **Judge provider:** implement `Judge` from `domain/judgment.py` (`name`, `model`, `async judge(state, probes) -> JudgeResult`) in `adapters/`. Translate each `NoulProbe` into a yes/no question with explicit true/false criteria and each `ScoreProbe` into an ordered level scale (probability = `score / (len(levels) - 1)`); return one `Judgment` per probe id plus model name, usage, and latency. Add the name to the `--judge` choices and `_build_judge` in `cli.py`; `CachingJudge` wraps it for free. Procedure: [hdd-add-judge-provider](../.agents/skills/hdd-add-judge-provider/SKILL.md).
+- **Harness source:** implement `TranscriptSource` from `domain/ports.py` (`harness`, `list_ids()`, `load(id)`) in `adapters/` so it returns a `Transcript` in the canonical form above, then add it to `--harness` in `cli.py`. Windowing, probes, policy, report, and renderers are harness-agnostic.
 - **Probe:** add a `NoulProbe`/`ScoreProbe` to `CATALOG` with a precondition in `select_probes`, a domain test, and a README row.
