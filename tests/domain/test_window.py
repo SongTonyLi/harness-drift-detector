@@ -343,3 +343,76 @@ def test_turn_evidence_always_keeps_at_least_one_result():
         _three_step_turn(), Budget(turn_evidence_result=4, turn_evidence_total=1)
     )[-1]
     assert [r.step for r in final.turn_evidence] == [1]
+
+
+def test_turn_end_reason_comes_from_the_turn_end_event():
+    ws = build_windows(_transcript())
+    assert all(w.turn_end_reason == "completed" and w.turn_completed for w in ws)
+    aborted = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "go", "human"),
+            AssistantEvent(2, 1, 1, "", (ToolCall("c1", "bash", "{}"),), "toolUse"),
+            TurnEndEvent(3, 1, "aborted"),
+            UserEvent(4, 2, "again", "human"),
+            AssistantEvent(5, 2, 1, "working", (), None),
+        ),
+    )
+    w1, w2 = build_windows(aborted)
+    assert w1.ends_turn and w1.turn_end_reason == "aborted" and not w1.turn_completed
+    assert w2.ends_turn and w2.turn_end_reason is None and not w2.turn_completed
+
+
+def test_earlier_requests_keep_the_original_task_behind_a_follow_up():
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "build the parser", "human"),
+            AssistantEvent(2, 1, 1, "ok", (), "stop"),
+            TurnEndEvent(3, 1, "completed"),
+            UserEvent(4, 2, "skill catalog", "harness"),
+            UserEvent(5, 2, "continue", "human"),
+            AssistantEvent(6, 2, 1, "still parsing", (), "stop"),
+            TurnEndEvent(7, 2, "completed"),
+            UserEvent(8, 3, "also add tests", "human"),
+            AssistantEvent(9, 3, 1, "tests", (), "stop"),
+        ),
+    )
+    w1, w2, w3 = build_windows(t)
+    assert w1.earlier_requests == () and "earlier_requests" not in w1.to_state()
+    assert w2.user_request == "continue" and w2.earlier_requests == ("build the parser",)
+    assert w3.earlier_requests == ("build the parser", "continue")
+    assert w3.to_state()["earlier_requests"] == ["build the parser", "continue"]
+
+
+def test_earlier_requests_are_bounded_in_count_and_length():
+    events = []
+    seq = 1
+    for i in range(6):
+        events.append(UserEvent(seq, i + 1, f"request {i} " + "x" * 50, "human"))
+        events.append(AssistantEvent(seq + 1, i + 1, 1, "ok", (), "stop"))
+        seq += 2
+    t = Transcript(TranscriptHeader("s1", "dsh", "/p"), tuple(events))
+    last = build_windows(t, Budget(earlier_request=12, earlier_requests_max=2))[-1]
+    assert [r[:9] for r in last.earlier_requests] == ["request 3", "request 4"]
+    assert all(OMITTED_MARKER.split("{")[0] in r for r in last.earlier_requests)
+
+
+def test_turn_evidence_leaves_out_bookkeeping_tools():
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "ship it", "human"),
+            AssistantEvent(2, 1, 1, "", (ToolCall("c1", "todo_write", "{}"),), "toolUse"),
+            ToolResultEvent(3, 1, 1, "c1", "todo_write", "Updated todo list", False),
+            AssistantEvent(4, 1, 2, "", (ToolCall("c2", "bash", "pytest"),), "toolUse"),
+            ToolResultEvent(5, 1, 2, "c2", "bash", "3 passed", False),
+            AssistantEvent(6, 1, 3, "", (ToolCall("c3", "send_message", "{}"),), "toolUse"),
+            ToolResultEvent(7, 1, 3, "c3", "send_message", "message delivered", False),
+            AssistantEvent(8, 1, 4, "All green.", (), "stop"),
+            TurnEndEvent(9, 1, "completed"),
+        ),
+    )
+    final = build_windows(t)[-1]
+    assert [r.tool for r in final.previous_message.results] == ["send_message"]
+    assert [(r.step, r.tool, r.text) for r in final.turn_evidence] == [(2, "bash", "3 passed")]

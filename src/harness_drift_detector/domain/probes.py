@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .window import Window
+from .window import NON_EVIDENCE_TOOLS, Window
 
 
 class Dimension(StrEnum):
@@ -49,7 +49,9 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.USER,
         instructions=(
             "Does the `assistant_step` fail to work toward what the user asked in `user_request`, "
-            "without stating a concrete reason it cannot proceed?"
+            "without stating a concrete reason it cannot proceed? When `earlier_requests` is "
+            "present, `user_request` is the same user's follow-up to those earlier messages and "
+            "is read together with them."
         ),
         true_criteria=(
             "the assistant step neither works toward the user's request nor states a concrete "
@@ -98,10 +100,17 @@ CATALOG: dict[str, Probe] = {
         instructions=(
             "Do the tool results in `previous_message.results` (each entry shows the tool's "
             "`input` and its output `text`) contain a failure or error that the "
-            "`assistant_step` proceeds past without acknowledging or handling it?"
+            "`assistant_step` proceeds past without acknowledging it in its text or handling "
+            "it through its `tool_calls` (a retry, a different approach, or a workaround)?"
         ),
-        true_criteria="a tool failure is present and the step neither acknowledges nor handles it",
-        false_criteria="the step acknowledges or handles the failure, or there is no real failure",
+        true_criteria=(
+            "a tool failure is present and the step neither mentions it nor retries, changes "
+            "approach, or works around it"
+        ),
+        false_criteria=(
+            "the step mentions the failure, or its tool calls retry, change approach, or work "
+            "around it, or there is no real failure"
+        ),
     ),
     "tool.unjustified_call": NoulProbe(
         id="tool.unjustified_call",
@@ -120,8 +129,8 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.GOAL,
         instructions=(
             "The `assistant_step` ends the assistant's turn (`assistant_step.ends_turn` is true). "
-            "Does it stop while `user_request` is not yet fulfilled, without explaining why it "
-            "stopped?"
+            "Does it stop while `user_request` (read with `earlier_requests` when present) is not "
+            "yet fulfilled, without explaining why it stopped?"
         ),
         true_criteria="the request is unfulfilled and the step gives no reason for stopping",
         false_criteria="the request is fulfilled, or the step explains why it is stopping",
@@ -140,7 +149,10 @@ CATALOG: dict[str, Probe] = {
     "drift.degree": ScoreProbe(
         id="drift.degree",
         dimension=Dimension.DRIFT,
-        instructions="How far has the `assistant_step` drifted from the `user_request`?",
+        instructions=(
+            "How far has the `assistant_step` drifted from the `user_request` (read with "
+            "`earlier_requests` when present)?"
+        ),
         levels=DRIFT_LEVELS,
     ),
 }
@@ -167,33 +179,39 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
     """Probes to ask for this window, in CATALOG order, filtered by `only` when given.
 
     Preconditions (a probe is skipped when its precondition is false):
-    - user.off_task, adjacent.ignores_previous, drift.degree: always
+    - adjacent.ignores_previous, drift.degree: always
+    - user.off_task: assistant_text.strip() != "" (a call-only step is judged by
+      tool.unjustified_call; raw arguments against the request are not an off-task signal)
     - adjacent.self_discontinuity: window.previous_assistant_text != ""
-    - tool.unsupported_claim: assistant_text.strip() != "" and (previous_message.source ==
-      "tools" or window.turn_evidence is non-empty)
-    - tool.ignored_error: previous_message.source == "tools" and any(result.is_error or
-      has_error_marker(result.text))
+    - tool.unsupported_claim: assistant_text.strip() != "" and there is evidence: a previous
+      result from a tool outside NON_EVIDENCE_TOOLS, or a non-empty window.turn_evidence
+    - tool.ignored_error: previous_message.source == "tools" and any previous result from a
+      tool outside NON_EVIDENCE_TOOLS has is_error or an error marker
     - tool.unjustified_call: len(window.tool_calls) > 0
-    - goal.premature_stop: window.ends_turn
+    - goal.premature_stop: window.ends_turn and window.turn_completed (an aborted or errored
+      turn did not end by the assistant's choice)
     - goal.unnecessary_question: any call.tool in QUESTION_TOOL_NAMES, or (ends_turn and
-      assistant_text.rstrip().endswith("?"))
+      turn_completed and assistant_text.rstrip().endswith("?"))
     """
     from_tools = window.previous_message.source == "tools"
     results = window.previous_message.results if from_tools else ()
+    evidence = [result for result in results if result.tool not in NON_EVIDENCE_TOOLS]
     has_text = window.assistant_text.strip() != ""
+    chose_to_end = window.ends_turn and window.turn_completed
     asks_question = any(call.tool in QUESTION_TOOL_NAMES for call in window.tool_calls) or (
-        window.ends_turn and window.assistant_text.rstrip().endswith("?")
+        chose_to_end and window.assistant_text.rstrip().endswith("?")
     )
 
     preconditions: dict[str, bool] = {
-        "user.off_task": True,
+        "user.off_task": has_text,
         "adjacent.ignores_previous": True,
         "adjacent.self_discontinuity": window.previous_assistant_text != "",
-        "tool.unsupported_claim": has_text and (from_tools or bool(window.turn_evidence)),
-        "tool.ignored_error": from_tools
-        and any(result.is_error or has_error_marker(result.text) for result in results),
+        "tool.unsupported_claim": has_text and (bool(evidence) or bool(window.turn_evidence)),
+        "tool.ignored_error": any(
+            result.is_error or has_error_marker(result.text) for result in evidence
+        ),
         "tool.unjustified_call": len(window.tool_calls) > 0,
-        "goal.premature_stop": window.ends_turn,
+        "goal.premature_stop": chose_to_end,
         "goal.unnecessary_question": asks_question,
         "drift.degree": True,
     }

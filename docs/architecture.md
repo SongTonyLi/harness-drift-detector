@@ -40,11 +40,11 @@ One judge call per window carries every applicable probe. Windows run concurrent
 
 ## Windows
 
-One per assistant step: `user_request` (latest human message), `previous_message` (the user message for a turn's first step, otherwise the previous step's tool results), `previous_assistant_text`, and `assistant_step` (text, tool calls, `ends_turn`). `Budget` bounds each field with an explicit omitted-chars marker. The system prompt is never included.
+One per assistant step: `user_request` (latest human message) with `earlier_requests` (the session's previous human messages, bounded), `previous_message` (the user message for a turn's first step, otherwise the previous step's tool results, each with the call's `input`), `previous_assistant_text`, `assistant_step` (text, tool calls, `ends_turn`), `turn_evidence` on a turn-ending step (a bounded digest of the turn's earlier results from real tools), and `turn_end_reason`. Results of bookkeeping tools (`NON_EVIDENCE_TOOLS` in `domain/window.py`) are never evidence. `Budget` bounds each field with an explicit omitted-chars marker. The system prompt is never included.
 
 ## Probes
 
-Nine probes in `domain/probes.py`: `user.off_task`, `adjacent.ignores_previous`, `adjacent.self_discontinuity`, `tool.unsupported_claim`, `tool.ignored_error`, `tool.unjustified_call`, `goal.premature_stop`, `goal.unnecessary_question` (Nouls, `true` means drift, each with a precondition) and `drift.degree` (a four-level Score used for ranking only). Wording follows the [SDE cascade cookbook](https://docs.typesafe.ai/cookbooks/sde_cascade): narrow, grounded in named state fields, criteria aligned with instructions.
+Nine probes in `domain/probes.py`: `user.off_task`, `adjacent.ignores_previous`, `adjacent.self_discontinuity`, `tool.unsupported_claim`, `tool.ignored_error`, `tool.unjustified_call`, `goal.premature_stop`, `goal.unnecessary_question` (Nouls, `true` means drift, each with a precondition) and `drift.degree` (a four-level Score used for ranking only). Preconditions keep questions the state cannot answer out of the request: a call-only step is judged by `tool.unjustified_call` rather than `user.off_task`, claims are checked only against real-tool evidence, and `goal.premature_stop` is asked only when the turn completed. `DriftReport.turns_interrupted` counts the turns that were aborted, errored, or never ended. Wording follows the [SDE cascade cookbook](https://docs.typesafe.ai/cookbooks/sde_cascade): narrow, grounded in named state fields, criteria aligned with instructions.
 
 ## Gate and report
 

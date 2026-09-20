@@ -23,13 +23,13 @@ precondition holds:
 
 | Probe id | Type | Asked when | Question |
 | --- | --- | --- | --- |
-| `user.off_task` | Noul | always | Does the step fail to work toward `user_request`, without stating a reason it cannot proceed? |
+| `user.off_task` | Noul | the step has text | Does the step fail to work toward `user_request` (read with the session's `earlier_requests`), without stating a reason it cannot proceed? |
 | `adjacent.ignores_previous` | Noul | always | Does the step ignore or contradict `previous_message`? |
 | `adjacent.self_discontinuity` | Noul | previous assistant text exists | Does the step abandon the assistant's own stated plan without saying why? |
-| `tool.unsupported_claim` | Noul | step has text and there are tool results to check (the previous step's, or earlier ones in the turn for a turn-ending step) | Does the step assert something the results (each shown with its `input` and output `text`) do not support? |
-| `tool.ignored_error` | Noul | a result is an error or matches an error marker | Does the step proceed past the failure without acknowledging it? |
+| `tool.unsupported_claim` | Noul | step has text and there is evidence from a real tool (the previous step's results, or earlier ones in the turn for a turn-ending step; bookkeeping tools such as `send_message` and `todo_write` never count) | Does the step assert something the results (each shown with its `input` and output `text`) do not support? |
+| `tool.ignored_error` | Noul | a real tool's result is an error or matches an error marker (a missing skill is a lookup miss, not a failure) | Does the step proceed past the failure without mentioning it or handling it through its own tool calls? |
 | `tool.unjustified_call` | Noul | the step calls tools | Are the calls unrelated to the request and to the previous message? |
-| `goal.premature_stop` | Noul | the step ends the turn | Does it stop with the request unfulfilled and no reason given? |
+| `goal.premature_stop` | Noul | the step ends a turn that completed (an aborted or errored turn did not end by the assistant's choice) | Does it stop with the request unfulfilled and no reason given? |
 | `goal.unnecessary_question` | Noul | the step asks the user | Is the question already answered, or answerable by the assistant? |
 | `drift.degree` | Score | always | How far has the step drifted? (on task / minor tangent / substantially off / unrelated) |
 
@@ -111,9 +111,12 @@ The unit of judgment is a **window**: one assistant step plus the minimal contex
 judge it: `user_request` (the latest human message), `previous_message` (the user message for a
 turn's first step, otherwise the previous step's tool results, each with the call's `input` and
 its output `text`), `previous_assistant_text`, and `assistant_step` (text, tool calls,
-`ends_turn`). A turn-ending step additionally carries `turn_evidence`, a bounded digest of the
-turn's earlier tool results, because a final summary claims things established across the whole
-turn, not only by the step before it. Each field is bounded by a `Budget` with explicit
+`ends_turn`), plus `earlier_requests`, the user's earlier messages in the session, so a
+follow-up such as "continue" keeps its original task. A turn-ending step additionally carries
+`turn_evidence`, a bounded digest of the turn's earlier tool results, because a final summary
+claims things established across the whole turn, not only by the step before it. The window
+also knows how its turn ended: a turn the harness aborted or that failed is counted in the
+report as interrupted, and is not asked whether the assistant stopped early. Each field is bounded by a `Budget` with explicit
 `[... N chars omitted ...]` markers; a long step keeps its ending and a failure line buried in
 the middle of a long tool result both survive the budget. The system prompt is never sent. All
 probes for one window go in a single call, and windows run concurrently under a semaphore.
@@ -166,40 +169,41 @@ One run over the author's own `~/.dsh/sessions` directory, judged with TypeSafe
 | sessions skipped (header only, no events) | 5 |
 | windows judged | 24 |
 | windows failed | 0 |
-| probes asked | 109 |
+| probes asked | 93 |
 | hotspots | 2 |
-| mean latency per window | 0.38s |
-| tokens (in / out) | 32210 / 2142 |
+| wall time per session | 0.7 to 1.4s |
+| tokens (in / out) | 30720 / 1854 |
 
 The two hotspots are the two steps a person reading the sessions marks as drift: an
 assistant answering a direct question with "I don't see a specific task", and the same
 assistant listing a directory and then asking what the user wants. Both fire on the expected
-dimensions at 0.85 to 0.92. On the other 22 windows no Noul probe exceeds 0.55, so the
-default threshold sits in a wide gap. An earlier window design that omitted each tool call's
-input and showed a turn-ending step only the previous step's results produced three false
-`tool.unsupported_claim` hotspots (0.77 to 0.87) on final summaries; adding the call input
-and a bounded digest of the turn's earlier results brought those to 0.25 to 0.50.
+dimensions at 0.88 to 0.94. On the other 22 windows no Noul probe exceeds 0.58, so the
+default threshold sits in a wide gap.
 
 ### A broader run
 
 The same detector over every local `dsh` session root (74 sessions, 4,068 assistant
-steps, 18,656 probes, no failed windows, about 8.2M input tokens) flags 16.7% of windows at
-the 0.7 threshold, and a manual sample of those hotspots puts precision well below the small
-run. The misses are not calibration: they trace to four gaps in what the window shows the
-judge, each measurable in the run.
+steps, no failed windows, about 8M input tokens per run) was the test bed for the window
+design. The first design flagged 16.7% of windows and a manual sample put precision near a
+third; the misses were not calibration but four gaps in what the window showed the judge.
+Closing them (the turn-end reason, the session's earlier requests, real-tool evidence only,
+and no off-task question for a call-only step) changed the run as follows.
 
-| cause | evidence |
-| --- | --- |
-| interrupted turns read as the assistant stopping early | 28 of 30 `goal.premature_stop` hotspots sit on turns whose `turn_end` reason is `aborted` or `error`; 25 end on a tool call |
-| text-less steps judged off task from raw tool arguments | 262 of 268 `user.off_task` hotspots are steps with no text; 164 follow a short follow-up message such as "continue" that hides the original request |
-| summaries checked against bookkeeping results | 47 of 207 `tool.unsupported_claim` hotspots respond to `send_message`, `todo_write`, or `list_agents` output; 30 more are turn-ending summaries of turns longer than 20 steps, beyond the evidence budget |
-| harmless errors counted as ignored | 66 of 192 `tool.ignored_error` hotspots are missing-skill lookups; 94 are silent workarounds where the next tool call is the handling |
+| metric | first window design | current |
+| --- | --- | --- |
+| hotspots (of 4,068 windows) | 680 (16.7%) | 295 (7.3%) |
+| `user.off_task` fired | 268 | 7 |
+| `tool.ignored_error` fired | 192 | 60 |
+| `goal.premature_stop` fired | 30 | 2 |
+| `tool.unsupported_claim` fired | 207 | 189 |
+| turns reported as interrupted | not reported | 35 |
+| probes asked | 18,656 | 15,223 |
 
-The fixes are all in windowing and preconditions: carry the turn-end reason and ask
-`goal.premature_stop` only on completed turns, ask `user.off_task` only when the step has
-text and let `tool.unjustified_call` cover call-only steps, include the earlier human
-messages of a session as bounded context, exclude bookkeeping tools from evidence, and treat
-a missing skill as a lookup miss rather than a failure.
+Of the 295 remaining hotspots, 189 are `tool.unsupported_claim`: 116 are narration steps
+that also make tool calls ("Everything is green. Final review:") whose claim reaches back to
+evidence no longer in view, and 74 are turn-ending summaries whose claims exceed the 6k-char
+evidence digest. Whether narration before further calls should count as a claim is a triage
+choice; `--override tool.unsupported_claim=0.9` or `--probes` lets a run make it either way.
 
 ## License
 

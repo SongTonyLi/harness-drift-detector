@@ -124,6 +124,7 @@ def _window(**kwargs):
         assistant_text="working",
         tool_calls=(),
         ends_turn=False,
+        turn_end_reason="completed",
     )
     base.update(kwargs)
     return Window(**base)
@@ -228,3 +229,60 @@ def test_unsupported_claim_is_asked_for_a_final_step_with_turn_evidence():
     assert "tool.unsupported_claim" not in _ids(without_evidence)
     silent = replace(final, assistant_text="")
     assert "tool.unsupported_claim" not in _ids(silent)
+
+
+def test_off_task_is_not_asked_for_a_call_only_step():
+    """Raw tool arguments against the request are not an off-task signal; the call is judged
+    by tool.unjustified_call instead."""
+    w3 = build_windows(_transcript())[2]
+    assert w3.assistant_text == ""
+    ids = _ids(w3)
+    assert "user.off_task" not in ids and "tool.unjustified_call" in ids
+
+
+def test_premature_stop_needs_a_turn_the_assistant_chose_to_end():
+    final = build_windows(_transcript())[1]
+    assert "goal.premature_stop" in _ids(final)
+    assert "goal.premature_stop" not in _ids(replace(final, turn_end_reason="aborted"))
+    assert "goal.premature_stop" not in _ids(replace(final, turn_end_reason="error"))
+    assert "goal.premature_stop" not in _ids(replace(final, turn_end_reason=None))
+
+
+def test_closing_question_is_only_a_question_when_the_turn_completed():
+    final = replace(build_windows(_transcript())[1], assistant_text="Shall I continue?")
+    assert "goal.unnecessary_question" in _ids(final)
+    assert "goal.unnecessary_question" not in _ids(replace(final, turn_end_reason="aborted"))
+    asked_by_tool = replace(
+        final, turn_end_reason="aborted", tool_calls=(StepCall("ask_user_question", "{}"),)
+    )
+    assert "goal.unnecessary_question" in _ids(asked_by_tool)
+
+
+def test_unsupported_claim_needs_evidence_from_a_real_tool():
+    base = build_windows(_transcript())[1]
+    bookkeeping = PreviousMessage(
+        source="tools",
+        results=(ToolOutcome("send_message", False, "message delivered"),),
+    )
+    assert "tool.unsupported_claim" not in _ids(replace(base, previous_message=bookkeeping))
+    mixed = PreviousMessage(
+        source="tools",
+        results=(
+            ToolOutcome("send_message", False, "message delivered"),
+            ToolOutcome("bash", False, "3 passed"),
+        ),
+    )
+    assert "tool.unsupported_claim" in _ids(replace(base, previous_message=mixed))
+
+
+def test_ignored_error_is_not_asked_for_a_failed_skill_lookup():
+    base = build_windows(_transcript())[1]
+    lookup = PreviousMessage(
+        source="tools",
+        results=(ToolOutcome("skill", True, 'Error: skill "x" is unknown or no longer available'),),
+    )
+    assert "tool.ignored_error" not in _ids(replace(base, previous_message=lookup))
+    real = PreviousMessage(
+        source="tools", results=(ToolOutcome("bash", False, "boom\n[exit code: 1]"),)
+    )
+    assert "tool.ignored_error" in _ids(replace(base, previous_message=real))
