@@ -115,3 +115,29 @@ def test_empty_outcomes():
     assert report.probe_stats == ()
     assert report.hotspots == ()
     assert report.usage == Usage(0, 0)
+
+
+def test_report_counts_interrupted_turns():
+    from harness_drift_detector.domain.transcript import (
+        AssistantEvent,
+        Transcript,
+        TranscriptHeader,
+        TurnEndEvent,
+        UserEvent,
+    )
+
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "a", "human"),
+            AssistantEvent(2, 1, 1, "x"),
+            TurnEndEvent(3, 1, "completed"),
+            UserEvent(4, 2, "b", "human"),
+            AssistantEvent(5, 2, 1, "y"),
+            TurnEndEvent(6, 2, "aborted"),
+            UserEvent(7, 3, "c", "human"),
+            AssistantEvent(8, 3, 1, "z"),
+        ),
+    )
+    report = build_report(t, [], DriftPolicy(), "fake", "fake", 0.0)
+    assert report.turns == 3 and report.turns_interrupted == 2

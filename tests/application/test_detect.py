@@ -101,12 +101,13 @@ async def test_only_probes_restricts_the_batch_and_skips_empty_windows():
     report = await DetectDrift(judge, DetectOptions(only_probes={"user.off_task"})).run(
         _transcript()
     )
-    assert [probe_ids for _state, probe_ids in judge.calls] == [("user.off_task",)] * 4
+    # the call-only step (turn 2, step 1) has no text, so off_task is not asked of it
+    assert [probe_ids for _state, probe_ids in judge.calls] == [("user.off_task",)] * 3
 
     narrow = _judge()
     await DetectDrift(narrow, DetectOptions(only_probes={"tool.ignored_error"})).run(_transcript())
     assert [probe_ids for _state, probe_ids in narrow.calls] == [("tool.ignored_error",)]
-    assert report.windows_judged == 4
+    assert report.windows_judged == 3
 
 
 async def test_hotspots_come_from_the_policy():
@@ -114,7 +115,7 @@ async def test_hotspots_come_from_the_policy():
     report = await DetectDrift(judge, DetectOptions(policy=DriftPolicy(fire_threshold=0.7))).run(
         _transcript()
     )
-    assert len(report.hotspots) == 4
+    assert len(report.hotspots) == 3  # off_task is not asked of the call-only step
     assert report.hotspots[0].severity == 0.9
     assert report.hotspots[0].fired[0].probe_id == "user.off_task"
 

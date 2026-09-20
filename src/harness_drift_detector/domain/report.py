@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from .judgment import JudgeResult, Usage
 from .policy import DriftPolicy, Hotspot, gate, rank
 from .probes import CATALOG, NoulProbe
-from .transcript import Transcript
+from .transcript import Transcript, TurnEndEvent
 from .window import Window
 
 
@@ -43,6 +43,7 @@ class DriftReport:
     hotspots: tuple[Hotspot, ...]
     outcomes: tuple[WindowOutcome, ...] = field(default_factory=tuple)
     policy: DriftPolicy = DriftPolicy()
+    turns_interrupted: int = 0  # turns with steps that were aborted, errored, or never ended
 
 
 def build_report(
@@ -55,7 +56,8 @@ def build_report(
 ) -> DriftReport:
     """Aggregate outcomes: gate each judged window, rank hotspots, compute per-probe stats
     (count/mean/max over judged windows; fired counts NoulProbes above threshold), sum usage.
-    turns = number of distinct turns; steps = number of assistant events."""
+    turns = number of distinct turns; steps = number of assistant events; turns_interrupted =
+    turns with assistant steps whose turn_end reason is not "completed" (or absent)."""
     judged = 0
     failed = 0
     probes_asked = 0
@@ -96,6 +98,10 @@ def build_report(
         for probe_id in known + unknown
     )
 
+    end_reasons = {e.turn: e.reason for e in transcript.events if isinstance(e, TurnEndEvent)}
+    turns_with_steps = {step.turn for step in transcript.assistant_steps()}
+    interrupted = sum(1 for turn in turns_with_steps if end_reasons.get(turn) != "completed")
+
     return DriftReport(
         transcript_id=transcript.transcript_id,
         judge_name=judge_name,
@@ -111,4 +117,5 @@ def build_report(
         hotspots=tuple(rank(hotspots)),
         outcomes=tuple(outcomes),
         policy=policy,
+        turns_interrupted=interrupted,
     )

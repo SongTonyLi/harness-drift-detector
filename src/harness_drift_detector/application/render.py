@@ -68,6 +68,7 @@ def report_to_dict(report: DriftReport) -> dict[str, Any]:
         "judge_name": report.judge_name,
         "judge_model": report.judge_model,
         "turns": report.turns,
+        "turns_interrupted": report.turns_interrupted,
         "steps": report.steps,
         "windows_judged": report.windows_judged,
         "windows_failed": report.windows_failed,
@@ -132,6 +133,8 @@ def render_markdown(report: DriftReport) -> str:
         "| metric | value |",
         "| --- | --- |",
         f"| turns | {data['turns']} |",
+        f"| turns interrupted (aborted, errored, or never ended) | "
+        f"{data.get('turns_interrupted', 0)} |",
         f"| steps | {data['steps']} |",
         f"| windows judged | {data['windows_judged']} |",
         f"| windows failed | {data['windows_failed']} |",
@@ -186,7 +189,8 @@ def render_terminal(report: DriftReport) -> str:
     data = report_to_dict(report)
     summary = (
         f"{data['transcript_id']}  judge={data['judge_name']}/{data['judge_model']}  "
-        f"turns={data['turns']} steps={data['steps']} judged={data['windows_judged']} "
+        f"turns={data['turns']} interrupted={data.get('turns_interrupted', 0)} "
+        f"steps={data['steps']} judged={data['windows_judged']} "
         f"failed={data['windows_failed']} probes={data['probes_asked']} "
         f"hotspots={len(data['hotspots'])}  {data['wall_time_s']:.2f}s"
     )

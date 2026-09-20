@@ -23,13 +23,13 @@ precondition holds:
 
 | Probe id | Type | Asked when | Question |
 | --- | --- | --- | --- |
-| `user.off_task` | Noul | always | Does the step fail to work toward `user_request`, without stating a reason it cannot proceed? |
+| `user.off_task` | Noul | the step has text | Does the step fail to work toward `user_request` (read with the session's `earlier_requests`), without stating a reason it cannot proceed? |
 | `adjacent.ignores_previous` | Noul | always | Does the step ignore or contradict `previous_message`? |
 | `adjacent.self_discontinuity` | Noul | previous assistant text exists | Does the step abandon the assistant's own stated plan without saying why? |
-| `tool.unsupported_claim` | Noul | step has text and there are tool results to check (the previous step's, or earlier ones in the turn for a turn-ending step) | Does the step assert something the results (each shown with its `input` and output `text`) do not support? |
-| `tool.ignored_error` | Noul | a result is an error or matches an error marker | Does the step proceed past the failure without acknowledging it? |
+| `tool.unsupported_claim` | Noul | step has text and there is evidence from a real tool (the previous step's results, or earlier ones in the turn for a turn-ending step; bookkeeping tools such as `send_message` and `todo_write` never count) | Does the step assert something the results (each shown with its `input` and output `text`) do not support? |
+| `tool.ignored_error` | Noul | a real tool's result is an error or matches an error marker (a missing skill is a lookup miss, not a failure) | Does the step proceed past the failure without mentioning it or handling it through its own tool calls? |
 | `tool.unjustified_call` | Noul | the step calls tools | Are the calls unrelated to the request and to the previous message? |
-| `goal.premature_stop` | Noul | the step ends the turn | Does it stop with the request unfulfilled and no reason given? |
+| `goal.premature_stop` | Noul | the step ends a turn that completed (an aborted or errored turn did not end by the assistant's choice) | Does it stop with the request unfulfilled and no reason given? |
 | `goal.unnecessary_question` | Noul | the step asks the user | Is the question already answered, or answerable by the assistant? |
 | `drift.degree` | Score | always | How far has the step drifted? (on task / minor tangent / substantially off / unrelated) |
 
@@ -111,9 +111,12 @@ The unit of judgment is a **window**: one assistant step plus the minimal contex
 judge it: `user_request` (the latest human message), `previous_message` (the user message for a
 turn's first step, otherwise the previous step's tool results, each with the call's `input` and
 its output `text`), `previous_assistant_text`, and `assistant_step` (text, tool calls,
-`ends_turn`). A turn-ending step additionally carries `turn_evidence`, a bounded digest of the
-turn's earlier tool results, because a final summary claims things established across the whole
-turn, not only by the step before it. Each field is bounded by a `Budget` with explicit
+`ends_turn`), plus `earlier_requests`, the user's earlier messages in the session, so a
+follow-up such as "continue" keeps its original task. A turn-ending step additionally carries
+`turn_evidence`, a bounded digest of the turn's earlier tool results, because a final summary
+claims things established across the whole turn, not only by the step before it. The window
+also knows how its turn ended: a turn the harness aborted or that failed is counted in the
+report as interrupted, and is not asked whether the assistant stopped early. Each field is bounded by a `Budget` with explicit
 `[... N chars omitted ...]` markers; a long step keeps its ending and a failure line buried in
 the middle of a long tool result both survive the budget. The system prompt is never sent. All
 probes for one window go in a single call, and windows run concurrently under a semaphore.

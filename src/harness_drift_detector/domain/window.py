@@ -13,6 +13,7 @@ from .transcript import (
     AssistantEvent,
     ToolResultEvent,
     Transcript,
+    TurnEndEvent,
     UserEvent,
 )
 
@@ -37,6 +38,26 @@ class Budget:
     # A turn-ending step also sees earlier results of its turn: each bounded, total bounded.
     turn_evidence_result: int = 600
     turn_evidence_total: int = 6000
+    # Earlier human messages of the session, so a short follow-up keeps its original task.
+    earlier_request: int = 600
+    earlier_requests_max: int = 3
+
+
+# Tools whose output records bookkeeping (a delivered message, an updated list, a loaded
+# skill) rather than an outcome in the workspace; never evidence, never a failure to handle.
+NON_EVIDENCE_TOOLS: frozenset[str] = frozenset(
+    {
+        "send_message",
+        "list_agents",
+        "todo_write",
+        "todo_read",
+        "get_goal",
+        "set_goal",
+        "skill",
+        "ask_user_question",
+        "AskUserQuestion",
+    }
+)
 
 
 def truncate(text: str, head: int, tail: int = 0) -> str:
@@ -106,6 +127,14 @@ class Window:
     tool_calls: tuple[StepCall, ...] = ()
     ends_turn: bool = False
     turn_evidence: tuple[TurnResult, ...] = ()  # earlier results of the turn; ends_turn only
+    turn_end_reason: str | None = (
+        None  # the turn_end event's reason; None when the turn never ended
+    )
+    earlier_requests: tuple[str, ...] = ()  # the user's earlier messages, oldest first, bounded
+
+    @property
+    def turn_completed(self) -> bool:
+        return self.turn_end_reason == "completed"
 
     @property
     def window_id(self) -> str:
@@ -120,7 +149,8 @@ class Window:
                               | {"from": "tools", "results": [{"tool","input","is_error","text"}]},
           "previous_assistant_text": str,
           "assistant_step": {"text": str, "tool_calls": [{"tool","arguments"}], "ends_turn": bool},
-          "turn_evidence": [{"step","tool","input","is_error","text"}]   # only when non-empty
+          "turn_evidence": [{"step","tool","input","is_error","text"}],  # only when non-empty
+          "earlier_requests": [str, ...]                                  # only when non-empty
         }
         """
         if self.previous_message.source == "user":
@@ -143,6 +173,8 @@ class Window:
                 "ends_turn": self.ends_turn,
             },
         }
+        if self.earlier_requests:
+            state["earlier_requests"] = list(self.earlier_requests)
         if self.turn_evidence:
             state["turn_evidence"] = [
                 {
@@ -177,17 +209,26 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
       turn except the previous step (whose results are already previous_message), most
       recent first while budget.turn_evidence_total lasts, in chronological order. A final
       summary claims things established across the turn, not only by the previous step.
+      Results of NON_EVIDENCE_TOOLS are left out.
+    - turn_end_reason: the reason of the turn's TurnEndEvent, None when there is none. A
+      turn that was aborted or errored did not end by the assistant's choice.
+    - earlier_requests: the human messages before user_request, oldest first, the last
+      budget.earlier_requests_max of them, each truncated to budget.earlier_request.
     """
     events = sorted(transcript.events, key=lambda event: event.seq)
     text_head, text_tail = _assistant_split(budget)
 
     last_step_seq: dict[int, int] = {}
+    turn_end_reasons: dict[int, str] = {}
     for event in events:
         if isinstance(event, AssistantEvent):
             last_step_seq[event.turn] = max(last_step_seq.get(event.turn, event.seq), event.seq)
+        elif isinstance(event, TurnEndEvent):
+            turn_end_reasons[event.turn] = event.reason
 
     windows: list[Window] = []
     latest_human = ""
+    human_history: list[str] = []
     previous_assistant: AssistantEvent | None = None
     pending_results: list[ToolResultEvent] = []
     turn_history: list[tuple[AssistantEvent, tuple[ToolOutcome, ...]]] = []
@@ -196,6 +237,7 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
         if isinstance(event, UserEvent):
             if event.origin == "human":
                 latest_human = event.text
+                human_history.append(event.text)
             continue
         if isinstance(event, ToolResultEvent):
             pending_results.append(event)
@@ -248,6 +290,11 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
                 ),
                 ends_turn=ends_turn,
                 turn_evidence=_turn_evidence(turn_history[:-1], budget) if ends_turn else (),
+                turn_end_reason=turn_end_reasons.get(event.turn),
+                earlier_requests=tuple(
+                    truncate(text, budget.earlier_request)
+                    for text in human_history[:-1][-max(budget.earlier_requests_max, 0) :]
+                ),
             )
         )
 
@@ -304,6 +351,8 @@ def _turn_evidence(
     spent = 0
     for step, outcomes in reversed(history):
         for outcome in reversed(outcomes):
+            if outcome.tool in NON_EVIDENCE_TOOLS:
+                continue
             text = truncate(outcome.text, head, tail)
             cost = len(text) + len(outcome.input)
             if chosen and spent + cost > budget.turn_evidence_total:
