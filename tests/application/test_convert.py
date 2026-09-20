@@ -49,7 +49,10 @@ def test_run_converts_every_listed_session(tmp_path):
     source = StubSource(["session-a", "session-b"])
     summary = ConvertSessions(source, JsonlTranscriptStore()).run(tmp_path / "out")
     assert isinstance(summary, ConvertSummary)
-    assert summary.converted == [tmp_path / "out" / "session-a.jsonl", tmp_path / "out" / "session-b.jsonl"]
+    assert summary.converted == [
+        tmp_path / "out" / "session-a.jsonl",
+        tmp_path / "out" / "session-b.jsonl",
+    ]
     assert summary.skipped == []
     assert all(path.exists() for path in summary.converted)
 
@@ -63,7 +66,8 @@ def test_run_restricts_to_the_given_ids(tmp_path):
 
 def test_a_failing_session_is_skipped_and_the_batch_continues(tmp_path):
     source = StubSource(
-        ["session-bad", "session-good"], broken={"session-bad": ValueError("line 3 is not valid JSON")}
+        ["session-bad", "session-good"],
+        broken={"session-bad": ValueError("line 3 is not valid JSON")},
     )
     summary = ConvertSessions(source, JsonlTranscriptStore()).run(tmp_path)
     assert [path.name for path in summary.converted] == ["session-good.jsonl"]

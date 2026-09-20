@@ -29,9 +29,7 @@ def _window(**kwargs):
 
 def _result(probabilities, model="jev-1.13.0"):
     return JudgeResult(
-        judgments={
-            pid: Judgment(pid, prob) for pid, prob in probabilities.items()
-        },
+        judgments={pid: Judgment(pid, prob) for pid, prob in probabilities.items()},
         model=model,
         usage=Usage(10, 2),
     )

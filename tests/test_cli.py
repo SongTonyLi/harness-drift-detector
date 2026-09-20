@@ -57,7 +57,9 @@ def test_no_command_exits_with_usage():
 
 def test_detect_with_typesafe_and_no_key_exits_2(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    code = main(["detect", str(tmp_path / "nope.jsonl"), "--judge", "typesafe", "--out", str(tmp_path)])
+    code = main(
+        ["detect", str(tmp_path / "nope.jsonl"), "--judge", "typesafe", "--out", str(tmp_path)]
+    )
     assert code == 2
     assert "TYPESAFE_API_KEY is not set" in capsys.readouterr().err
 
@@ -89,7 +91,9 @@ def test_hotspots_missing_file_exits_2(tmp_path, capsys):
 
 
 def test_detect_with_no_readable_transcripts_warns_and_exits_1(tmp_path, capsys):
-    code = main(["detect", str(tmp_path / "nope.jsonl"), "--judge", "heuristic", "--out", str(tmp_path)])
+    code = main(
+        ["detect", str(tmp_path / "nope.jsonl"), "--judge", "heuristic", "--out", str(tmp_path)]
+    )
     captured = capsys.readouterr()
     assert code == 1
     assert "nope.jsonl" in captured.err
@@ -139,7 +143,16 @@ def test_detect_caches_between_runs(tmp_path):
     transcript = str(sorted(out.glob("*.jsonl"))[0])
     cache = tmp_path / "cache"
 
-    args = ["detect", transcript, "--judge", "heuristic", "--out", str(tmp_path / "reports"), "--cache-dir", str(cache)]
+    args = [
+        "detect",
+        transcript,
+        "--judge",
+        "heuristic",
+        "--out",
+        str(tmp_path / "reports"),
+        "--cache-dir",
+        str(cache),
+    ]
     assert main(args) == 0
     keys = sorted(cache.glob("*.json"))
     assert keys
@@ -274,7 +287,9 @@ def test_detect_override_raises_one_probe_threshold(tmp_path):
     )
 
 
-@pytest.mark.parametrize("value", ["user.offtask=0.9", "user.off_task", "user.off_task=x", "user.off_task=1.5"])
+@pytest.mark.parametrize(
+    "value", ["user.offtask=0.9", "user.off_task", "user.off_task=x", "user.off_task=1.5"]
+)
 def test_detect_rejects_a_bad_override(tmp_path, capsys, value):
     code = main(
         [
@@ -291,4 +306,3 @@ def test_detect_rejects_a_bad_override(tmp_path, capsys, value):
     )
     assert code == 2
     assert "bad --override" in capsys.readouterr().err
-

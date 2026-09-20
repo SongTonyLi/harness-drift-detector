@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from typesafe_sdk import AsyncTypeSafeClient, Noul, NoulCriteria, Score
 
@@ -19,7 +20,9 @@ def probes_to_questions(probes: Sequence[Probe]) -> dict[str, Noul | Score]:
     questions: dict[str, Noul | Score] = {}
     for probe in probes:
         if isinstance(probe, ScoreProbe):
-            questions[probe.id] = Score(instructions=probe.instructions, criteria=list(probe.levels))
+            questions[probe.id] = Score(
+                instructions=probe.instructions, criteria=list(probe.levels)
+            )
         else:
             questions[probe.id] = Noul(
                 instructions=probe.instructions,

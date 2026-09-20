@@ -39,7 +39,9 @@ class StubWindow:
         return self.state
 
 
-def _hotspot(step: int = 2, severity: float = 0.9, excerpt: str = "There are two files.") -> Hotspot:
+def _hotspot(
+    step: int = 2, severity: float = 0.9, excerpt: str = "There are two files."
+) -> Hotspot:
     return Hotspot(
         transcript_id="s1",
         turn=1,
@@ -112,9 +114,13 @@ def test_report_to_dict_serializes_window_outcomes():
     }
     judged = WindowOutcome(
         window=StubWindow("s1:t1:s1", 1, 1, 5, state),
-        result=JudgeResult(judgments=JUDGMENTS, model="jev-1.13.0", usage=Usage(10, 2), latency_s=0.3),
+        result=JudgeResult(
+            judgments=JUDGMENTS, model="jev-1.13.0", usage=Usage(10, 2), latency_s=0.3
+        ),
     )
-    failed = WindowOutcome(window=StubWindow("s1:t1:s2", 1, 2, 7, state), result=None, error="RuntimeError('boom')")
+    failed = WindowOutcome(
+        window=StubWindow("s1:t1:s2", 1, 2, 7, state), result=None, error="RuntimeError('boom')"
+    )
     data = report_to_dict(_report(outcomes=(judged, failed)))
 
     first, second = data["windows"]
@@ -188,13 +194,17 @@ def test_report_to_dict_uses_the_real_window_state():
         step=2,
         seq=7,
         user_request="list the files",
-        previous_message=PreviousMessage(source="tools", results=(ToolOutcome("bash", False, "a.py"),)),
+        previous_message=PreviousMessage(
+            source="tools", results=(ToolOutcome("bash", False, "a.py"),)
+        ),
         previous_assistant_text="I'll list them.",
         assistant_text="There are two files.",
         tool_calls=(),
         ends_turn=True,
     )
-    outcome = WindowOutcome(window=window, result=JudgeResult(judgments=JUDGMENTS, model="jev-1.13.0"))
+    outcome = WindowOutcome(
+        window=window, result=JudgeResult(judgments=JUDGMENTS, model="jev-1.13.0")
+    )
     data = report_to_dict(_report(outcomes=(outcome,)))
     assert data["windows"][0]["state"]["previous_message"] == {
         "from": "tools",

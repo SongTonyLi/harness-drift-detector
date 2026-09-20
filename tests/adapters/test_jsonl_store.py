@@ -31,7 +31,12 @@ def _transcript(transcript_id: str = "session-1") -> Transcript:
             UserEvent(8, 1, "liste les fichiers – s'il te plaît", "human"),
             UserEvent(9, 1, "runtime context", "harness"),
             AssistantEvent(
-                15, 1, 1, "I'll list them.", (ToolCall("c1", "bash", '{"command":"ls"}'),), "toolUse"
+                15,
+                1,
+                1,
+                "I'll list them.",
+                (ToolCall("c1", "bash", '{"command":"ls"}'),),
+                "toolUse",
             ),
             ToolResultEvent(17, 1, 1, "c1", "bash", "a.py\nb.py", False),
             AssistantEvent(20, 1, 2, "There are two files.", (), "stop"),
@@ -89,7 +94,9 @@ def test_load_tolerates_blank_lines(tmp_path):
 
 def test_load_without_a_header_raises(tmp_path):
     path = tmp_path / "headerless.jsonl"
-    path.write_text('{"kind": "user", "seq": 1, "turn": 1, "text": "hi", "origin": "human"}\n', encoding="utf-8")
+    path.write_text(
+        '{"kind": "user", "seq": 1, "turn": 1, "text": "hi", "origin": "human"}\n', encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="header"):
         JsonlTranscriptStore().load(path)
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..domain.judgment import Judgment
 from ..domain.report import DriftReport
@@ -163,7 +164,8 @@ def render_markdown(report: DriftReport) -> str:
         for hotspot in data["hotspots"]:
             lines.append(
                 f"| {hotspot['rank']} | {hotspot['window_id']} | {hotspot['severity']:.2f} | "
-                f"{_cell(_fired_summary(hotspot))} | {_degree(hotspot)} | {_cell(hotspot['excerpt'])} |"
+                f"{_cell(_fired_summary(hotspot))} | {_degree(hotspot)} | "
+                f"{_cell(hotspot['excerpt'])} |"
             )
     return "\n".join(lines) + "\n"
 

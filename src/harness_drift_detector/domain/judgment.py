@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from .probes import Probe
 from .transcript import JsonValue
@@ -22,8 +23,10 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
 
-    def __add__(self, other: "Usage") -> "Usage":
-        return Usage(self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens)
+    def __add__(self, other: Usage) -> Usage:
+        return Usage(
+            self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens
+        )
 
 
 @dataclass(frozen=True)

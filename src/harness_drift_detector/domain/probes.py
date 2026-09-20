@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Union
 
 from .window import Window
 
@@ -35,7 +34,7 @@ class ScoreProbe:
     levels: tuple[str, ...]  # ordered, level 0 first
 
 
-Probe = Union[NoulProbe, ScoreProbe]
+Probe = NoulProbe | ScoreProbe
 
 DRIFT_LEVELS: tuple[str, ...] = (
     "fully on task: the step directly advances the user's request",
@@ -97,9 +96,9 @@ CATALOG: dict[str, Probe] = {
         id="tool.ignored_error",
         dimension=Dimension.TOOL,
         instructions=(
-            "Do the tool results in `previous_message.results` (each entry shows the tool's `input` "
-            "and its output `text`) contain a failure or error that the `assistant_step` proceeds "
-            "past without acknowledging or handling it?"
+            "Do the tool results in `previous_message.results` (each entry shows the tool's "
+            "`input` and its output `text`) contain a failure or error that the "
+            "`assistant_step` proceeds past without acknowledging or handling it?"
         ),
         true_criteria="a tool failure is present and the step neither acknowledges nor handles it",
         false_criteria="the step acknowledges or handles the failure, or there is no real failure",
@@ -112,14 +111,17 @@ CATALOG: dict[str, Probe] = {
             "`previous_message` called for?"
         ),
         true_criteria="the tool calls serve neither the user's request nor the previous message",
-        false_criteria="the tool calls serve the user's request or follow from the previous message",
+        false_criteria=(
+            "the tool calls serve the user's request or follow from the previous message"
+        ),
     ),
     "goal.premature_stop": NoulProbe(
         id="goal.premature_stop",
         dimension=Dimension.GOAL,
         instructions=(
             "The `assistant_step` ends the assistant's turn (`assistant_step.ends_turn` is true). "
-            "Does it stop while `user_request` is not yet fulfilled, without explaining why it stopped?"
+            "Does it stop while `user_request` is not yet fulfilled, without explaining why it "
+            "stopped?"
         ),
         true_criteria="the request is unfulfilled and the step gives no reason for stopping",
         false_criteria="the request is fulfilled, or the step explains why it is stopping",
@@ -129,7 +131,8 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.GOAL,
         instructions=(
             "Does the `assistant_step` ask the user something that is already answered in "
-            "`user_request` or `previous_message`, or that the assistant could have found out by itself?"
+            "`user_request` or `previous_message`, or that the assistant could have found out "
+            "by itself?"
         ),
         true_criteria="the question is already answered or was avoidable",
         false_criteria="the question is necessary and not answered by the available context",
@@ -178,9 +181,9 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
     from_tools = window.previous_message.source == "tools"
     results = window.previous_message.results if from_tools else ()
     has_text = window.assistant_text.strip() != ""
-    asks_question = any(
-        call.tool in QUESTION_TOOL_NAMES for call in window.tool_calls
-    ) or (window.ends_turn and window.assistant_text.rstrip().endswith("?"))
+    asks_question = any(call.tool in QUESTION_TOOL_NAMES for call in window.tool_calls) or (
+        window.ends_turn and window.assistant_text.rstrip().endswith("?")
+    )
 
     preconditions: dict[str, bool] = {
         "user.off_task": True,

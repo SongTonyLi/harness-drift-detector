@@ -6,7 +6,7 @@ by a Budget so that state stays small (System One models lose accuracy on large 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from .transcript import (
@@ -139,15 +139,19 @@ class Window:
             "previous_assistant_text": self.previous_assistant_text,
             "assistant_step": {
                 "text": self.assistant_text,
-                "tool_calls": [
-                    {"tool": c.tool, "arguments": c.arguments} for c in self.tool_calls
-                ],
+                "tool_calls": [{"tool": c.tool, "arguments": c.arguments} for c in self.tool_calls],
                 "ends_turn": self.ends_turn,
             },
         }
         if self.turn_evidence:
             state["turn_evidence"] = [
-                {"step": r.step, "tool": r.tool, "input": r.input, "is_error": r.is_error, "text": r.text}
+                {
+                    "step": r.step,
+                    "tool": r.tool,
+                    "input": r.input,
+                    "is_error": r.is_error,
+                    "text": r.text,
+                }
                 for r in self.turn_evidence
             ]
         return state

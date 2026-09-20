@@ -27,9 +27,7 @@ def test_assistant_roundtrip():
     )
     rec = event_to_record(ev)
     assert list(rec)[0] == "kind" and rec["kind"] == "assistant"
-    assert rec["tool_calls"] == [
-        {"call_id": "c1", "name": "bash", "arguments": '{"command":"ls"}'}
-    ]
+    assert rec["tool_calls"] == [{"call_id": "c1", "name": "bash", "arguments": '{"command":"ls"}'}]
     assert record_to_event(rec) == ev
 
 
@@ -58,9 +56,7 @@ def test_header_roundtrip_and_unknown_kind():
 
 
 def test_records_are_json_scalars_only():
-    rec = event_to_record(
-        AssistantEvent(1, 1, 1, "t", (ToolCall("c", "bash", "{}"),), None)
-    )
+    rec = event_to_record(AssistantEvent(1, 1, 1, "t", (ToolCall("c", "bash", "{}"),), None))
     assert rec["stop_reason"] is None
     assert all(isinstance(v, (str, int, bool, list, type(None))) for v in rec.values())
 
@@ -69,10 +65,20 @@ def test_optional_keys_default():
     ev = record_to_event({"kind": "assistant", "seq": 1, "turn": 1, "step": 1, "text": "x"})
     assert ev == AssistantEvent(1, 1, 1, "x", (), None)
     res = record_to_event(
-        {"kind": "tool_result", "seq": 2, "turn": 1, "step": 1, "call_id": "c", "name": "bash", "text": "o"}
+        {
+            "kind": "tool_result",
+            "seq": 2,
+            "turn": 1,
+            "step": 1,
+            "call_id": "c",
+            "name": "bash",
+            "text": "o",
+        }
     )
     assert res.is_error is False
-    header = record_to_header({"kind": "transcript", "transcript_id": "s", "harness": "dsh", "source_path": "/p"})
+    header = record_to_header(
+        {"kind": "transcript", "transcript_id": "s", "harness": "dsh", "source_path": "/p"}
+    )
     assert header == TranscriptHeader("s", "dsh", "/p")
 
 

@@ -53,7 +53,9 @@ async def test_ignored_error_fires_on_is_error_without_acknowledgement():
 
 async def test_ignored_error_fires_on_an_error_marker_in_the_text():
     state = _state(
-        previous_message=_tools({"tool": "bash", "is_error": False, "text": "boom\n[exit code: 1]"}),
+        previous_message=_tools(
+            {"tool": "bash", "is_error": False, "text": "boom\n[exit code: 1]"}
+        ),
         assistant_text="Done.",
     )
 
@@ -75,7 +77,9 @@ async def test_ignored_error_is_low_when_the_step_acknowledges_the_failure():
 
 async def test_ignored_error_is_zero_without_any_failure():
     state = _state(
-        previous_message=_tools({"tool": "bash", "is_error": False, "text": "a.py\n[exit code: 0]"}),
+        previous_message=_tools(
+            {"tool": "bash", "is_error": False, "text": "a.py\n[exit code: 0]"}
+        ),
     )
 
     result = await HeuristicJudge().judge(state, [IGNORED_ERROR])

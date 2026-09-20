@@ -9,7 +9,9 @@ from harness_drift_detector.domain.probes import CATALOG
 
 pytestmark = [
     pytest.mark.live,
-    pytest.mark.skipif(not os.environ.get("TYPESAFE_API_KEY"), reason="TYPESAFE_API_KEY is not set"),
+    pytest.mark.skipif(
+        not os.environ.get("TYPESAFE_API_KEY"), reason="TYPESAFE_API_KEY is not set"
+    ),
 ]
 
 STATE = {

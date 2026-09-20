@@ -1,5 +1,10 @@
 from dataclasses import replace
 
+from harness_drift_detector.domain.probes import (
+    CATALOG,
+    has_error_marker,
+    select_probes,
+)
 from harness_drift_detector.domain.transcript import (
     AssistantEvent,
     SystemEvent,
@@ -9,11 +14,6 @@ from harness_drift_detector.domain.transcript import (
     TranscriptHeader,
     TurnEndEvent,
     UserEvent,
-)
-from harness_drift_detector.domain.probes import (
-    CATALOG,
-    has_error_marker,
-    select_probes,
 )
 from harness_drift_detector.domain.window import (
     PreviousMessage,
@@ -42,7 +42,9 @@ def _transcript():
             AssistantEvent(
                 10, 2, 1, "", (ToolCall("c2", "bash", '{"command":"rm b.py"}'),), "toolUse"
             ),
-            ToolResultEvent(11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True),
+            ToolResultEvent(
+                11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True
+            ),
             AssistantEvent(12, 2, 2, "Done.", (), "stop"),
             TurnEndEvent(13, 2, "completed"),
         ),
@@ -148,7 +150,9 @@ def test_select_probes_no_question_when_turn_continues():
 
 def test_unsupported_claim_needs_non_empty_text():
     tools = PreviousMessage(source="tools", results=(ToolOutcome("bash", False, "a.py"),))
-    assert "tool.unsupported_claim" not in _ids(_window(previous_message=tools, assistant_text="  "))
+    assert "tool.unsupported_claim" not in _ids(
+        _window(previous_message=tools, assistant_text="  ")
+    )
     assert "tool.unsupported_claim" in _ids(_window(previous_message=tools, assistant_text="ok"))
 
 
@@ -224,4 +228,3 @@ def test_unsupported_claim_is_asked_for_a_final_step_with_turn_evidence():
     assert "tool.unsupported_claim" not in _ids(without_evidence)
     silent = replace(final, assistant_text="")
     assert "tool.unsupported_claim" not in _ids(silent)
-

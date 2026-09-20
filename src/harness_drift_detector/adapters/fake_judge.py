@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Mapping, Sequence, Union
+from collections.abc import Callable, Mapping, Sequence
 
 from ..domain.judgment import JudgeResult, Judgment, Usage
 from ..domain.probes import Probe
 from ..domain.transcript import JsonValue
 
-Answers = Union[
-    Mapping[str, float],
-    Callable[[JsonValue, Sequence[Probe]], Mapping[str, float]],
-]
+Answers = Mapping[str, float] | Callable[[JsonValue, Sequence[Probe]], Mapping[str, float]]
 
 
 class FakeJudge:

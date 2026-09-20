@@ -42,7 +42,9 @@ def _assistant(seq: int, turn: int, step: int, content: list[dict], stop_reason:
     )
 
 
-def _tool_result(seq: int, turn: int, step: int, call_id: str, text: str, is_error: bool | None) -> str:
+def _tool_result(
+    seq: int, turn: int, step: int, call_id: str, text: str, is_error: bool | None
+) -> str:
     block: dict[str, object] = {
         "type": "tool-result",
         "toolCallId": call_id,
@@ -92,7 +94,10 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             data={
                 "turn": 1,
                 "step": 1,
-                "message": {"role": "system", "content": [{"type": "text", "text": "You are a coding agent."}]},
+                "message": {
+                    "role": "system",
+                    "content": [{"type": "text", "text": "You are a coding agent."}],
+                },
             },
             surfaceOp="append",
         ),
@@ -114,7 +119,11 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             time=CREATED_AT,
             data={
                 "content": [{"type": "text", "text": "Current runtime context: branch main."}],
-                "source": {"kind": "plugin", "plugin": "@deepseek-ai/dsh-system-prompt", "form": "snapshot"},
+                "source": {
+                    "kind": "plugin",
+                    "plugin": "@deepseek-ai/dsh-system-prompt",
+                    "form": "snapshot",
+                },
                 "role": "user",
                 "id": "msg-2",
             },
@@ -136,7 +145,12 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             type="request/header",
             seq=11,
             time=CREATED_AT,
-            data={"header": {"config": {"provider": PROVIDER, "model": MODEL, "maxTokens": 128000}, "tools": []}},
+            data={
+                "header": {
+                    "config": {"provider": PROVIDER, "model": MODEL, "maxTokens": 128000},
+                    "tools": [],
+                }
+            },
         ),
         _line(
             type="request/context",
@@ -151,7 +165,12 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             [
                 {"type": "reasoning", "text": ""},
                 {"type": "text", "text": "I'll list them."},
-                {"type": "tool-call", "id": "call_1|fc_1", "name": "bash", "arguments": '{"command":"ls"}'},
+                {
+                    "type": "tool-call",
+                    "id": "call_1|fc_1",
+                    "name": "bash",
+                    "arguments": '{"command":"ls"}',
+                },
             ],
             "toolUse",
         ),
@@ -159,14 +178,25 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             type="tool/call",
             seq=16,
             time=CREATED_AT,
-            data={"turn": 1, "step": 1, "callId": "call_1|fc_1", "name": "bash", "arguments": '{"command":"ls"}'},
+            data={
+                "turn": 1,
+                "step": 1,
+                "callId": "call_1|fc_1",
+                "name": "bash",
+                "arguments": '{"command":"ls"}',
+            },
         ),
         _tool_result(17, 1, 1, "call_1|fc_1", ANSI_TOOL_TEXT, False),
         _line(type="step/end", seq=18, time=CREATED_AT, data={"turn": 1, "step": 1}),
         _line(type="step/start", seq=19, time=CREATED_AT, data={"turn": 1, "step": 2}),
         _assistant(20, 1, 2, [{"type": "text", "text": "There are two files."}], "stop"),
         _line(type="step/end", seq=21, time=CREATED_AT, data={"turn": 1, "step": 2}),
-        _line(type="turn/end", seq=22, time=CREATED_AT, data={"turn": 1, "reason": {"kind": "completed"}}),
+        _line(
+            type="turn/end",
+            seq=22,
+            time=CREATED_AT,
+            data={"turn": 1, "reason": {"kind": "completed"}},
+        ),
     ]
     if not two_turns:
         return lines
@@ -192,7 +222,12 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             1,
             [
                 {"type": "reasoning", "text": ""},
-                {"type": "tool-call", "id": "call_2|fc_2", "name": "bash", "arguments": '{"command":"rm b.py"}'},
+                {
+                    "type": "tool-call",
+                    "id": "call_2|fc_2",
+                    "name": "bash",
+                    "arguments": '{"command":"rm b.py"}',
+                },
             ],
             "toolUse",
         ),
@@ -200,7 +235,13 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
             type="tool/call",
             seq=27,
             time=CREATED_AT,
-            data={"turn": 2, "step": 1, "callId": "call_2|fc_2", "name": "bash", "arguments": '{"command":"rm b.py"}'},
+            data={
+                "turn": 2,
+                "step": 1,
+                "callId": "call_2|fc_2",
+                "name": "bash",
+                "arguments": '{"command":"rm b.py"}',
+            },
         ),
         _tool_result(28, 2, 1, "call_2|fc_2", ERROR_TOOL_TEXT, True),
         _line(type="step/end", seq=29, time=CREATED_AT, data={"turn": 2, "step": 1}),
@@ -222,7 +263,12 @@ def build_session_lines(session_id: str = "session-fixture", two_turns: bool = T
         ),
         _tool_result(32, 2, 2, "call_3|fc_3", "b.py", None),
         _line(type="step/end", seq=33, time=CREATED_AT, data={"turn": 2, "step": 2}),
-        _line(type="turn/end", seq=34, time=CREATED_AT, data={"turn": 2, "reason": {"kind": "completed"}}),
+        _line(
+            type="turn/end",
+            seq=34,
+            time=CREATED_AT,
+            data={"turn": 2, "reason": {"kind": "completed"}},
+        ),
     ]
     return lines
 

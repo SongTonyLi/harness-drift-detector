@@ -7,9 +7,9 @@ the ubiquitous language, so the record <-> event mapping lives here (pure functi
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
-JsonValue = Union[str, int, float, bool, None, list["JsonValue"], dict[str, "JsonValue"]]
+JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 UserOrigin = Literal["human", "harness"]
 
@@ -70,7 +70,7 @@ class TurnEndEvent:
     kind: Literal["turn_end"] = "turn_end"
 
 
-Event = Union[SystemEvent, UserEvent, AssistantEvent, ToolResultEvent, TurnEndEvent]
+Event = SystemEvent | UserEvent | AssistantEvent | ToolResultEvent | TurnEndEvent
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,8 @@ def header_to_record(header: TranscriptHeader) -> dict[str, Any]:
 def event_to_record(event: Event) -> dict[str, Any]:
     """Canonical JSONL event line as a dict. `kind` is the first key.
 
-    assistant: {"kind","seq","turn","step","text","tool_calls":[{"call_id","name","arguments"}],"stop_reason"}
+    assistant: {"kind","seq","turn","step","text",
+                "tool_calls":[{"call_id","name","arguments"}],"stop_reason"}
     tool_result: {"kind","seq","turn","step","call_id","name","text","is_error"}
     user: {"kind","seq","turn","text","origin"}
     system: {"kind","seq","turn","step","text"}

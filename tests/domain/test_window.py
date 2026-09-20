@@ -52,7 +52,9 @@ def _transcript():
             AssistantEvent(
                 10, 2, 1, "", (ToolCall("c2", "bash", '{"command":"rm b.py"}'),), "toolUse"
             ),
-            ToolResultEvent(11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True),
+            ToolResultEvent(
+                11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True
+            ),
             AssistantEvent(12, 2, 2, "Done.", (), "stop"),
             TurnEndEvent(13, 2, "completed"),
         ),
@@ -107,9 +109,7 @@ def test_to_state_shape():
 def test_to_state_user_previous_message():
     s = build_windows(_transcript())[0].to_state()
     assert s["previous_message"] == {"from": "user", "text": "list the files"}
-    assert s["assistant_step"]["tool_calls"] == [
-        {"tool": "bash", "arguments": '{"command":"ls"}'}
-    ]
+    assert s["assistant_step"]["tool_calls"] == [{"tool": "bash", "arguments": '{"command":"ls"}'}]
 
 
 def test_budget_applies():
@@ -296,7 +296,13 @@ def test_turn_ending_step_sees_earlier_results_of_the_turn():
         (1, "bash", '{"command":"ls"}', "a.py\nb.py")
     ]
     assert w3.to_state()["turn_evidence"] == [
-        {"step": 1, "tool": "bash", "input": '{"command":"ls"}', "is_error": False, "text": "a.py\nb.py"}
+        {
+            "step": 1,
+            "tool": "bash",
+            "input": '{"command":"ls"}',
+            "is_error": False,
+            "text": "a.py\nb.py",
+        }
     ]
 
 
@@ -311,11 +317,18 @@ def test_turn_evidence_keeps_the_most_recent_results_within_the_total_budget():
     seq = 2
     for step in range(1, 6):
         events.append(
-            AssistantEvent(seq, 1, step, "", (ToolCall(f"c{step}", "bash", f"cmd{step}"),), "toolUse")
+            AssistantEvent(
+                seq, 1, step, "", (ToolCall(f"c{step}", "bash", f"cmd{step}"),), "toolUse"
+            )
         )
-        events.append(ToolResultEvent(seq + 1, 1, step, f"c{step}", "bash", f"out{step}" + "." * 100, False))
+        events.append(
+            ToolResultEvent(seq + 1, 1, step, f"c{step}", "bash", f"out{step}" + "." * 100, False)
+        )
         seq += 2
-    events += [AssistantEvent(seq, 1, 6, "All done.", (), "stop"), TurnEndEvent(seq + 1, 1, "completed")]
+    events += [
+        AssistantEvent(seq, 1, 6, "All done.", (), "stop"),
+        TurnEndEvent(seq + 1, 1, "completed"),
+    ]
     t = Transcript(TranscriptHeader("s1", "dsh", "/p"), tuple(events))
     final = build_windows(t, Budget(turn_evidence_result=50, turn_evidence_total=170))[-1]
     # step 5 is previous_message; steps 4 and 3 fit the total budget (each about 80 chars:
@@ -326,6 +339,7 @@ def test_turn_evidence_keeps_the_most_recent_results_within_the_total_budget():
 
 
 def test_turn_evidence_always_keeps_at_least_one_result():
-    final = build_windows(_three_step_turn(), Budget(turn_evidence_result=4, turn_evidence_total=1))[-1]
+    final = build_windows(
+        _three_step_turn(), Budget(turn_evidence_result=4, turn_evidence_total=1)
+    )[-1]
     assert [r.step for r in final.turn_evidence] == [1]
-

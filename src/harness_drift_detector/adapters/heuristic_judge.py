@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from ..domain.judgment import JudgeResult, Judgment
 from ..domain.probes import Probe, has_error_marker

@@ -11,8 +11,8 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .application.detect import DetectDrift, DetectOptions
 from .application.render import render_hotspots, render_json, render_markdown, render_terminal
@@ -37,13 +37,19 @@ def _positive_int(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hdd", description="Drift hotspotting for harness transcripts")
+    parser = argparse.ArgumentParser(
+        prog="hdd", description="Drift hotspotting for harness transcripts"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     convert = sub.add_parser("convert", help="convert harness sessions to canonical JSONL")
     convert.add_argument("--harness", default="dsh", choices=["dsh"])
-    convert.add_argument("--root", required=True, type=Path, help="directory holding session-<uuid> dirs")
-    convert.add_argument("--out", required=True, type=Path, help="output directory for .jsonl transcripts")
+    convert.add_argument(
+        "--root", required=True, type=Path, help="directory holding session-<uuid> dirs"
+    )
+    convert.add_argument(
+        "--out", required=True, type=Path, help="output directory for .jsonl transcripts"
+    )
     convert.add_argument("--ids", nargs="+", default=None, help="only these session ids")
     convert.add_argument("--no-scrub", action="store_true", help="do not scrub secrets")
     convert.set_defaults(func=cmd_convert)
@@ -197,8 +203,12 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     for report in reports:
-        (args.out / f"{report.transcript_id}.json").write_text(render_json(report), encoding="utf-8")
-        (args.out / f"{report.transcript_id}.md").write_text(render_markdown(report), encoding="utf-8")
+        (args.out / f"{report.transcript_id}.json").write_text(
+            render_json(report), encoding="utf-8"
+        )
+        (args.out / f"{report.transcript_id}.md").write_text(
+            render_markdown(report), encoding="utf-8"
+        )
         print(render_terminal(report))
     return 0
 

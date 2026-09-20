@@ -29,7 +29,9 @@ def _result() -> JudgeResult:
 
 
 def test_cache_key_is_stable_for_equal_inputs():
-    assert cache_key("jev-latest", STATE, PROBES) == cache_key("jev-latest", dict(STATE), list(PROBES))
+    assert cache_key("jev-latest", STATE, PROBES) == cache_key(
+        "jev-latest", dict(STATE), list(PROBES)
+    )
 
 
 def test_cache_key_ignores_key_order_in_the_state():

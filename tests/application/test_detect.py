@@ -33,13 +33,19 @@ def _transcript(transcript_id: str = "s1") -> Transcript:
             SystemEvent(1, 1, 1, "system prompt"),
             UserEvent(2, 1, "runtime snapshot", "harness"),
             UserEvent(3, 1, "list the files", "human"),
-            AssistantEvent(5, 1, 1, "I'll list them.", (ToolCall("c1", "bash", '{"command":"ls"}'),), "toolUse"),
+            AssistantEvent(
+                5, 1, 1, "I'll list them.", (ToolCall("c1", "bash", '{"command":"ls"}'),), "toolUse"
+            ),
             ToolResultEvent(6, 1, 1, "c1", "bash", "a.py\nb.py", False),
             AssistantEvent(7, 1, 2, "There are two files.", (), "stop"),
             TurnEndEvent(8, 1, "completed"),
             UserEvent(9, 2, "delete b.py", "human"),
-            AssistantEvent(10, 2, 1, "", (ToolCall("c2", "bash", '{"command":"rm b.py"}'),), "toolUse"),
-            ToolResultEvent(11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True),
+            AssistantEvent(
+                10, 2, 1, "", (ToolCall("c2", "bash", '{"command":"rm b.py"}'),), "toolUse"
+            ),
+            ToolResultEvent(
+                11, 2, 1, "c2", "bash", "rm: b.py: Permission denied\n[exit code: 1]", True
+            ),
             AssistantEvent(12, 2, 2, "Done.", (), "stop"),
             TurnEndEvent(13, 2, "completed"),
         ),
@@ -92,7 +98,9 @@ async def test_concurrency_is_bounded_by_the_semaphore():
 
 async def test_only_probes_restricts_the_batch_and_skips_empty_windows():
     judge = _judge()
-    report = await DetectDrift(judge, DetectOptions(only_probes={"user.off_task"})).run(_transcript())
+    report = await DetectDrift(judge, DetectOptions(only_probes={"user.off_task"})).run(
+        _transcript()
+    )
     assert [probe_ids for _state, probe_ids in judge.calls] == [("user.off_task",)] * 4
 
     narrow = _judge()
@@ -103,13 +111,17 @@ async def test_only_probes_restricts_the_batch_and_skips_empty_windows():
 
 async def test_hotspots_come_from_the_policy():
     judge = _judge({"user.off_task": 0.9, "drift.degree": 0.66})
-    report = await DetectDrift(judge, DetectOptions(policy=DriftPolicy(fire_threshold=0.7))).run(_transcript())
+    report = await DetectDrift(judge, DetectOptions(policy=DriftPolicy(fire_threshold=0.7))).run(
+        _transcript()
+    )
     assert len(report.hotspots) == 4
     assert report.hotspots[0].severity == 0.9
     assert report.hotspots[0].fired[0].probe_id == "user.off_task"
 
     calm = _judge({"user.off_task": 0.5})
-    quiet = await DetectDrift(calm, DetectOptions(policy=DriftPolicy(fire_threshold=0.7))).run(_transcript())
+    quiet = await DetectDrift(calm, DetectOptions(policy=DriftPolicy(fire_threshold=0.7))).run(
+        _transcript()
+    )
     assert quiet.hotspots == ()
 
 

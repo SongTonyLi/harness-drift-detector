@@ -7,8 +7,8 @@ The record mapping itself lives in the domain; this adapter only does the I/O.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from ..domain.transcript import (
     Event,

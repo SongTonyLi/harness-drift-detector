@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from ..domain.judgment import Judge, JudgeResult, Judgment, Usage
 from ..domain.ports import JudgmentCache
@@ -102,10 +104,8 @@ class CachingJudge:
         if hit is not None:
             return dataclasses.replace(hit, cached=True, usage=Usage(), latency_s=0.0)
         result = await self.inner.judge(state, probes)
-        try:
+        with contextlib.suppress(Exception):  # a write failure never discards a judgment made
             self.cache.put(key, result)
-        except Exception:  # a cache write must never discard a judgment already made
-            pass
         return result
 
     async def aclose(self) -> None:

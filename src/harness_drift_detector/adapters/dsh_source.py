@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 from ..domain.transcript import (
     AssistantEvent,

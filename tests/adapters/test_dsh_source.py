@@ -76,10 +76,19 @@ def test_system_event_keeps_turn_and_step():
 def test_assistant_steps_carry_text_calls_and_stop_reason():
     steps = [e for e in _parse().events if isinstance(e, AssistantEvent)]
     first = steps[0]
-    assert (first.turn, first.step, first.text, first.stop_reason) == (1, 1, "I'll list them.", "toolUse")
+    assert (first.turn, first.step, first.text, first.stop_reason) == (
+        1,
+        1,
+        "I'll list them.",
+        "toolUse",
+    )
     assert first.tool_calls[0].call_id == "call_1|fc_1"
     assert (first.tool_calls[0].name, first.tool_calls[0].arguments) == ("bash", '{"command":"ls"}')
-    assert (steps[1].text, steps[1].tool_calls, steps[1].stop_reason) == ("There are two files.", (), "stop")
+    assert (steps[1].text, steps[1].tool_calls, steps[1].stop_reason) == (
+        "There are two files.",
+        (),
+        "stop",
+    )
     assert steps[2].text == "" and steps[2].tool_calls[0].name == "bash"
     assert steps[3].stop_reason is None
     assert steps[3].tool_calls[0].name == "ask_user_question"
@@ -104,7 +113,9 @@ def test_tool_result_text_is_ansi_stripped_and_scrubbed():
     results = [e for e in _parse().events if isinstance(e, ToolResultEvent)]
     assert results[0].text == "a.py\nb.py\n[exit code: 0]"
     assert FAKE_SECRET not in results[1].text
-    assert results[1].text.startswith("rm: b.py: Permission denied\n[exit code: 1]\nAWS_KEY=[REDACTED_SECRET]")
+    assert results[1].text.startswith(
+        "rm: b.py: Permission denied\n[exit code: 1]\nAWS_KEY=[REDACTED_SECRET]"
+    )
 
 
 def test_scrub_off_keeps_secrets_but_still_strips_ansi():
