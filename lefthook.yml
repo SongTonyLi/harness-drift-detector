@@ -1,0 +1,24 @@
+# Git hooks (lefthook). Local checkpoints stay fast; scripts/gates.py owns the full set.
+# Install once per clone: `uv run lefthook install`.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: whitespace (staged)
+      run: git diff --cached --check
+    - name: ruff (staged)
+      glob: '*.py'
+      run: uv run ruff check --fix {staged_files} && uv run ruff format {staged_files}
+      stage_fixed: true
+    - name: secrets (staged)
+      run: uv run python scripts/verify_no_secrets.py --cached
+
+commit-msg:
+  jobs:
+    - name: no tool attribution
+      run: uv run python scripts/verify_commit_message.py {1}
+
+pre-push:
+  jobs:
+    - name: gates
+      run: uv run python scripts/gates.py pre-push
