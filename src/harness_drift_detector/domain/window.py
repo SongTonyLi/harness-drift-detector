@@ -34,6 +34,9 @@ class Budget:
     previous_assistant_text: int = 2000
     assistant_text: int = 4000
     arguments: int = 1200
+    # A turn-ending step also sees earlier results of its turn: each bounded, total bounded.
+    turn_evidence_result: int = 600
+    turn_evidence_total: int = 6000
 
 
 def truncate(text: str, head: int, tail: int = 0) -> str:
@@ -61,6 +64,7 @@ class ToolOutcome:
     tool: str
     is_error: bool
     text: str
+    input: str = ""  # the call's arguments (the command), so output is read with its cause
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,17 @@ class StepCall:
 
 
 @dataclass(frozen=True)
+class TurnResult:
+    """An earlier tool result of the same turn, shown only to a turn-ending step."""
+
+    step: int
+    tool: str
+    input: str
+    is_error: bool
+    text: str
+
+
+@dataclass(frozen=True)
 class Window:
     transcript_id: str
     turn: int
@@ -90,6 +105,7 @@ class Window:
     assistant_text: str
     tool_calls: tuple[StepCall, ...] = ()
     ends_turn: bool = False
+    turn_evidence: tuple[TurnResult, ...] = ()  # earlier results of the turn; ends_turn only
 
     @property
     def window_id(self) -> str:
@@ -101,9 +117,10 @@ class Window:
         {
           "user_request": str,
           "previous_message": {"from": "user", "text": str}
-                              | {"from": "tools", "results": [{"tool","is_error","text"}]},
+                              | {"from": "tools", "results": [{"tool","input","is_error","text"}]},
           "previous_assistant_text": str,
-          "assistant_step": {"text": str, "tool_calls": [{"tool","arguments"}], "ends_turn": bool}
+          "assistant_step": {"text": str, "tool_calls": [{"tool","arguments"}], "ends_turn": bool},
+          "turn_evidence": [{"step","tool","input","is_error","text"}]   # only when non-empty
         }
         """
         if self.previous_message.source == "user":
@@ -112,11 +129,11 @@ class Window:
             previous = {
                 "from": "tools",
                 "results": [
-                    {"tool": r.tool, "is_error": r.is_error, "text": r.text}
+                    {"tool": r.tool, "input": r.input, "is_error": r.is_error, "text": r.text}
                     for r in self.previous_message.results
                 ],
             }
-        return {
+        state: dict[str, Any] = {
             "user_request": self.user_request,
             "previous_message": previous,
             "previous_assistant_text": self.previous_assistant_text,
@@ -128,6 +145,12 @@ class Window:
                 "ends_turn": self.ends_turn,
             },
         }
+        if self.turn_evidence:
+            state["turn_evidence"] = [
+                {"step": r.step, "tool": r.tool, "input": r.input, "is_error": r.is_error, "text": r.text}
+                for r in self.turn_evidence
+            ]
+        return state
 
 
 def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Window]:
@@ -136,18 +159,20 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
     - user_request: text of the latest UserEvent with origin == "human" before the step
       (already truncated to budget.user_request). Harness-injected user messages are ignored.
     - previous_message: for the first assistant step of a turn, {"user", text of the latest
-      human message}. For later steps, {"tools", results of the previous assistant step's
-      tool calls in this turn} (each text truncated head/tail). If the previous step made no
-      tool calls (text only), previous_message is the previous assistant text as
-      PreviousMessage(source="user", text=<that text>)? No: use source="tools" with empty
-      results only if calls existed but produced no result; otherwise fall back to the
-      latest human message. Keep it literal: previous_message describes the last thing that
-      happened before this step.
+      human message}. For later steps whose previous step made tool calls, {"tools", that
+      step's results, each with the call's input and its text truncated head/tail} (empty
+      results when calls produced no result). After a text-only step, the latest human
+      message again: previous_message is literally the last thing that happened before
+      this step.
     - previous_assistant_text: text of the previous assistant step in the same turn ("" for
       the first step), truncated.
     - assistant_text: this step's text, truncated head and tail so the ending survives.
       tool_calls: this step's calls with arguments truncated (head only).
     - ends_turn: True when no later AssistantEvent exists in the same turn.
+    - turn_evidence: for a turn-ending step only, the results of every earlier step of the
+      turn except the previous step (whose results are already previous_message), most
+      recent first while budget.turn_evidence_total lasts, in chronological order. A final
+      summary claims things established across the turn, not only by the previous step.
     """
     events = sorted(transcript.events, key=lambda event: event.seq)
     text_head, text_tail = _assistant_split(budget)
@@ -161,6 +186,7 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
     latest_human = ""
     previous_assistant: AssistantEvent | None = None
     pending_results: list[ToolResultEvent] = []
+    turn_history: list[tuple[AssistantEvent, tuple[ToolOutcome, ...]]] = []
 
     for event in events:
         if isinstance(event, UserEvent):
@@ -175,17 +201,24 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
 
         if previous_assistant is not None and previous_assistant.turn != event.turn:
             previous_assistant = None
+            turn_history = []
 
         user_request = truncate(latest_human, budget.user_request)
+        ends_turn = event.seq == last_step_seq.get(event.turn)
+
+        if previous_assistant is not None:
+            previous_outcomes = (
+                _results_for(previous_assistant, pending_results, budget)
+                if previous_assistant.tool_calls
+                else ()
+            )
+            turn_history.append((previous_assistant, previous_outcomes))
 
         if previous_assistant is None:
             previous_message = PreviousMessage(source="user", text=user_request)
             previous_assistant_text = ""
         elif previous_assistant.tool_calls:
-            previous_message = PreviousMessage(
-                source="tools",
-                results=_results_for(previous_assistant, pending_results, budget),
-            )
+            previous_message = PreviousMessage(source="tools", results=previous_outcomes)
             previous_assistant_text = truncate(
                 previous_assistant.text, budget.previous_assistant_text
             )
@@ -209,7 +242,8 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
                     StepCall(tool=call.name, arguments=truncate(call.arguments, budget.arguments))
                     for call in event.tool_calls
                 ),
-                ends_turn=event.seq == last_step_seq.get(event.turn),
+                ends_turn=ends_turn,
+                turn_evidence=_turn_evidence(turn_history[:-1], budget) if ends_turn else (),
             )
         )
 
@@ -224,6 +258,9 @@ def _results_for(
 ) -> tuple[ToolOutcome, ...]:
     """Results of `step`'s tool calls, in call order, then same-step results with other ids."""
     call_names = {call.call_id: call.name for call in step.tool_calls}
+    call_inputs = {
+        call.call_id: truncate(call.arguments, budget.arguments) for call in step.tool_calls
+    }
     matched = {
         result.call_id: result
         for result in results
@@ -244,9 +281,40 @@ def _results_for(
             tool=result.name or call_names.get(result.call_id, ""),
             is_error=result.is_error,
             text=_result_text(result.text, budget),
+            input=call_inputs.get(result.call_id, ""),
         )
         for result in ordered
     )
+
+
+def _turn_evidence(
+    history: list[tuple[AssistantEvent, tuple[ToolOutcome, ...]]], budget: Budget
+) -> tuple[TurnResult, ...]:
+    """Earlier results of the turn for a turn-ending step: most recent first while the total
+    budget lasts (the first result is always kept), returned in chronological order. Each
+    result text is re-budgeted head and tail to `budget.turn_evidence_result`."""
+    per_result = max(budget.turn_evidence_result, 0)
+    head = per_result - per_result // 3
+    tail = per_result - head
+    chosen: list[TurnResult] = []
+    spent = 0
+    for step, outcomes in reversed(history):
+        for outcome in reversed(outcomes):
+            text = truncate(outcome.text, head, tail)
+            cost = len(text) + len(outcome.input)
+            if chosen and spent + cost > budget.turn_evidence_total:
+                return tuple(reversed(chosen))
+            spent += cost
+            chosen.append(
+                TurnResult(
+                    step=step.step,
+                    tool=outcome.tool,
+                    input=outcome.input,
+                    is_error=outcome.is_error,
+                    text=text,
+                )
+            )
+    return tuple(reversed(chosen))
 
 
 def _result_text(text: str, budget: Budget) -> str:

@@ -60,6 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
     detect.add_argument("--model", default=DEFAULT_MODEL)
     detect.add_argument("--out", type=Path, default=DEFAULT_REPORTS_DIR)
     detect.add_argument("--threshold", type=float, default=DriftPolicy().fire_threshold)
+    detect.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        metavar="PROBE=THRESHOLD",
+        help="firing threshold for one probe, e.g. tool.unsupported_claim=0.9; repeatable",
+    )
     detect.add_argument("--concurrency", type=_positive_int, default=DetectOptions().concurrency)
     detect.add_argument("--probes", default=None, help="comma-separated probe ids to ask")
     detect.add_argument("--no-cache", action="store_true")
@@ -143,6 +150,27 @@ def _parse_probe_ids(raw: str | None) -> set[str] | None:
     return wanted
 
 
+def _parse_overrides(raw: Sequence[str]) -> dict[str, float]:
+    """`PROBE=THRESHOLD` pairs; unknown ids and thresholds outside [0, 1] raise."""
+    overrides: dict[str, float] = {}
+    for item in raw:
+        probe_id, sep, value = item.partition("=")
+        probe_id = probe_id.strip()
+        if not sep or probe_id not in CATALOG:
+            raise ValueError(
+                f"bad --override {item!r}: expected PROBE=THRESHOLD with a known probe id; "
+                f"known ids: {', '.join(CATALOG)}"
+            )
+        try:
+            threshold = float(value)
+        except ValueError:
+            raise ValueError(f"bad --override {item!r}: threshold must be a number") from None
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError(f"bad --override {item!r}: threshold must be between 0 and 1")
+        overrides[probe_id] = threshold
+    return overrides
+
+
 def cmd_detect(args: argparse.Namespace) -> int:
     if args.judge == "typesafe" and not os.environ.get("TYPESAFE_API_KEY"):
         print("TYPESAFE_API_KEY is not set", file=sys.stderr)
@@ -150,6 +178,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
     try:
         only_probes = _parse_probe_ids(args.probes)
+        overrides = _parse_overrides(args.override)
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
@@ -160,7 +189,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
         return 1
 
     options = DetectOptions(
-        policy=DriftPolicy(fire_threshold=args.threshold),
+        policy=DriftPolicy(fire_threshold=args.threshold, overrides=overrides),
         concurrency=args.concurrency,
         only_probes=only_probes,
     )

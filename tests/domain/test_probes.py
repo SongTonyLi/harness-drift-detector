@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from harness_drift_detector.domain.transcript import (
     AssistantEvent,
     SystemEvent,
@@ -203,3 +205,23 @@ def test_ignored_error_is_probed_when_the_failure_is_in_a_long_tool_result():
         ),
     )
     assert "tool.ignored_error" in _ids(build_windows(t)[1])
+
+
+def test_unsupported_claim_is_asked_for_a_final_step_with_turn_evidence():
+    """A final summary after a text-only step still has tool results to be checked against."""
+    from harness_drift_detector.domain.window import TurnResult
+
+    base = build_windows(_transcript())[1]
+    evidence = (TurnResult(step=1, tool="bash", input="ls", is_error=False, text="a.py"),)
+    final = replace(
+        base,
+        previous_message=PreviousMessage(source="user", text="list the files"),
+        turn_evidence=evidence,
+        ends_turn=True,
+    )
+    assert "tool.unsupported_claim" in _ids(final)
+    without_evidence = replace(final, turn_evidence=())
+    assert "tool.unsupported_claim" not in _ids(without_evidence)
+    silent = replace(final, assistant_text="")
+    assert "tool.unsupported_claim" not in _ids(silent)
+

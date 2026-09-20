@@ -23,10 +23,10 @@ precondition holds:
 
 | Probe id | Type | Asked when | Question |
 | --- | --- | --- | --- |
-| `user.off_task` | Noul | always | Does the step fail to work toward `user_request`? |
+| `user.off_task` | Noul | always | Does the step fail to work toward `user_request`, without stating a reason it cannot proceed? |
 | `adjacent.ignores_previous` | Noul | always | Does the step ignore or contradict `previous_message`? |
 | `adjacent.self_discontinuity` | Noul | previous assistant text exists | Does the step abandon the assistant's own stated plan without saying why? |
-| `tool.unsupported_claim` | Noul | responding to tool results, step has text | Does the step assert something the results do not support? |
+| `tool.unsupported_claim` | Noul | step has text and there are tool results to check (the previous step's, or earlier ones in the turn for a turn-ending step) | Does the step assert something the results (each shown with its `input` and output `text`) do not support? |
 | `tool.ignored_error` | Noul | a result is an error or matches an error marker | Does the step proceed past the failure without acknowledging it? |
 | `tool.unjustified_call` | Noul | the step calls tools | Are the calls unrelated to the request and to the previous message? |
 | `goal.premature_stop` | Noul | the step ends the turn | Does it stop with the request unfulfilled and no reason given? |
@@ -64,7 +64,8 @@ for wiring up a new harness, not for triage.
 
 `hdd detect` writes `<transcript-id>.json` (the full report) and `<transcript-id>.md`
 (summary tables) per transcript and prints a compact terminal summary. Useful flags:
-`--threshold 0.7`, `--concurrency 8`, `--probes user.off_task,tool.ignored_error`,
+`--threshold 0.7`, `--override tool.unsupported_claim=0.9` (per-probe threshold, repeatable),
+`--concurrency 8`, `--probes user.off_task,tool.ignored_error`,
 `--no-cache`, `--cache-dir .hdd-cache`. Judgments are cached on disk by a content hash of
 model name, state, and probe wording, so changing only the threshold costs nothing. The hash
 uses the model *name* you passed: with the `jev-latest` alias, a cached judgment survives a
@@ -107,12 +108,15 @@ cli.py        wires adapters into use cases
 `adapters` implement the ports; `cli` does the wiring and imports adapters lazily.
 
 The unit of judgment is a **window**: one assistant step plus the minimal context needed to
-judge it (the human request, the message it is answering, its own previous text, and the step
-itself). Each field is bounded by a `Budget` with explicit `[... N chars omitted ...]`
-markers, because System One accuracy degrades on large state. Long fields keep their head
-and their tail, so the end of a step (its conclusions, its closing question) and a failure
-buried in the middle of a long tool result both survive the budget. All probes for one
-window go in a single call, and windows run concurrently under a semaphore.
+judge it: `user_request` (the latest human message), `previous_message` (the user message for a
+turn's first step, otherwise the previous step's tool results, each with the call's `input` and
+its output `text`), `previous_assistant_text`, and `assistant_step` (text, tool calls,
+`ends_turn`). A turn-ending step additionally carries `turn_evidence`, a bounded digest of the
+turn's earlier tool results, because a final summary claims things established across the whole
+turn, not only by the step before it. Each field is bounded by a `Budget` with explicit
+`[... N chars omitted ...]` markers; a long step keeps its ending and a failure line buried in
+the middle of a long tool result both survive the budget. The system prompt is never sent. All
+probes for one window go in a single call, and windows run concurrently under a semaphore.
 
 ## Adding a judge provider
 
@@ -163,9 +167,18 @@ One run over the author's own `~/.dsh/sessions` directory, judged with TypeSafe
 | windows judged | 24 |
 | windows failed | 0 |
 | probes asked | 109 |
-| hotspots | 5 |
-| mean latency per window | 0.43s |
-| tokens (in / out) | 27529 / 2142 |
+| hotspots | 2 |
+| mean latency per window | 0.38s |
+| tokens (in / out) | 32210 / 2142 |
+
+The two hotspots are the two steps a person reading the sessions marks as drift: an
+assistant answering a direct question with "I don't see a specific task", and the same
+assistant listing a directory and then asking what the user wants. Both fire on the expected
+dimensions at 0.85 to 0.92. On the other 22 windows no Noul probe exceeds 0.55, so the
+default threshold sits in a wide gap. An earlier window design that omitted each tool call's
+input and showed a turn-ending step only the previous step's results produced three false
+`tool.unsupported_claim` hotspots (0.77 to 0.87) on final summaries; adding the call input
+and a bounded digest of the turn's earlier results brought those to 0.25 to 0.50.
 
 ## License
 

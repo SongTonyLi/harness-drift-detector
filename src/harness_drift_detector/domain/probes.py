@@ -48,9 +48,18 @@ CATALOG: dict[str, Probe] = {
     "user.off_task": NoulProbe(
         id="user.off_task",
         dimension=Dimension.USER,
-        instructions="Does the `assistant_step` fail to work toward what the user asked in `user_request`?",
-        true_criteria="the assistant step does not work toward the user's request",
-        false_criteria="the assistant step works toward the user's request",
+        instructions=(
+            "Does the `assistant_step` fail to work toward what the user asked in `user_request`, "
+            "without stating a concrete reason it cannot proceed?"
+        ),
+        true_criteria=(
+            "the assistant step neither works toward the user's request nor states a concrete "
+            "reason it cannot proceed"
+        ),
+        false_criteria=(
+            "the assistant step works toward the user's request, or states a concrete reason it "
+            "cannot proceed"
+        ),
     ),
     "adjacent.ignores_previous": NoulProbe(
         id="adjacent.ignores_previous",
@@ -77,7 +86,9 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.TOOL,
         instructions=(
             "Does the `assistant_step` text assert an outcome, fact, or completed action that the "
-            "tool results in `previous_message.results` do not support?"
+            "tool results do not support? The tool results are the entries of "
+            "`previous_message.results` and, when present, the earlier results of this turn in "
+            "`turn_evidence`; each entry shows the tool's `input` and its output `text`."
         ),
         true_criteria="the step claims something the tool results do not support",
         false_criteria="every claim in the step is supported by the tool results",
@@ -86,8 +97,9 @@ CATALOG: dict[str, Probe] = {
         id="tool.ignored_error",
         dimension=Dimension.TOOL,
         instructions=(
-            "Do the tool results in `previous_message.results` contain a failure or error that the "
-            "`assistant_step` proceeds past without acknowledging or handling it?"
+            "Do the tool results in `previous_message.results` (each entry shows the tool's `input` "
+            "and its output `text`) contain a failure or error that the `assistant_step` proceeds "
+            "past without acknowledging or handling it?"
         ),
         true_criteria="a tool failure is present and the step neither acknowledges nor handles it",
         false_criteria="the step acknowledges or handles the failure, or there is no real failure",
@@ -154,7 +166,8 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
     Preconditions (a probe is skipped when its precondition is false):
     - user.off_task, adjacent.ignores_previous, drift.degree: always
     - adjacent.self_discontinuity: window.previous_assistant_text != ""
-    - tool.unsupported_claim: previous_message.source == "tools" and assistant_text.strip() != ""
+    - tool.unsupported_claim: assistant_text.strip() != "" and (previous_message.source ==
+      "tools" or window.turn_evidence is non-empty)
     - tool.ignored_error: previous_message.source == "tools" and any(result.is_error or
       has_error_marker(result.text))
     - tool.unjustified_call: len(window.tool_calls) > 0
@@ -173,7 +186,7 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
         "user.off_task": True,
         "adjacent.ignores_previous": True,
         "adjacent.self_discontinuity": window.previous_assistant_text != "",
-        "tool.unsupported_claim": from_tools and has_text,
+        "tool.unsupported_claim": has_text and (from_tools or bool(window.turn_evidence)),
         "tool.ignored_error": from_tools
         and any(result.is_error or has_error_marker(result.text) for result in results),
         "tool.unjustified_call": len(window.tool_calls) > 0,

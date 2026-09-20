@@ -247,3 +247,48 @@ def test_convert_rejects_ids_without_values(tmp_path):
     with pytest.raises(SystemExit) as exc:
         main(["convert", "--root", str(tmp_path), "--out", str(tmp_path / "out"), "--ids"])
     assert exc.value.code == 2
+
+
+def test_detect_override_raises_one_probe_threshold(tmp_path):
+    reports = tmp_path / "reports"
+    code = main(
+        [
+            "detect",
+            str(_transcript_file(tmp_path)),
+            "--judge",
+            "heuristic",
+            "--out",
+            str(reports),
+            "--no-cache",
+            "--override",
+            "tool.unsupported_claim=0.95",
+            "--override",
+            "user.off_task=1.0",
+        ]
+    )
+    assert code == 0
+    data = json.loads(next(reports.glob("*.json")).read_text(encoding="utf-8"))
+    assert data["policy"]["overrides"] == {"tool.unsupported_claim": 0.95, "user.off_task": 1.0}
+    assert not any(
+        fired["probe_id"] == "user.off_task" for h in data["hotspots"] for fired in h["fired"]
+    )
+
+
+@pytest.mark.parametrize("value", ["user.offtask=0.9", "user.off_task", "user.off_task=x", "user.off_task=1.5"])
+def test_detect_rejects_a_bad_override(tmp_path, capsys, value):
+    code = main(
+        [
+            "detect",
+            str(_transcript_file(tmp_path)),
+            "--judge",
+            "heuristic",
+            "--out",
+            str(tmp_path / "reports"),
+            "--no-cache",
+            "--override",
+            value,
+        ]
+    )
+    assert code == 2
+    assert "bad --override" in capsys.readouterr().err
+

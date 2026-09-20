@@ -198,7 +198,7 @@ def test_report_to_dict_uses_the_real_window_state():
     data = report_to_dict(_report(outcomes=(outcome,)))
     assert data["windows"][0]["state"]["previous_message"] == {
         "from": "tools",
-        "results": [{"tool": "bash", "is_error": False, "text": "a.py"}],
+        "results": [{"tool": "bash", "input": "", "is_error": False, "text": "a.py"}],
     }
 
 
