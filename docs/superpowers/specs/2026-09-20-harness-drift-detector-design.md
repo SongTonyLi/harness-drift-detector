@@ -166,7 +166,7 @@ full report), Markdown (summary tables), terminal text.
 ## CLI
 
 ```
-hdd convert --harness dsh --root ~/.dsh/sessions/--Users-songli-- --out data/transcripts
+hdd convert --harness dsh --root ~/.dsh/sessions/<encoded-cwd> --out data/transcripts
 hdd detect data/transcripts/*.jsonl --judge typesafe --out reports [--threshold 0.7] [--concurrency 8] [--no-cache] [--probes user.off_task,...]
 hdd hotspots reports/<transcript>.json [--top 10]
 ```
