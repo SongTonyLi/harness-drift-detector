@@ -19,3 +19,4 @@ reports/
 # Local tool state
 .claude-flow/
 .hdd-cache/
+.DS_Store
