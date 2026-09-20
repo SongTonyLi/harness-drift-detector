@@ -9,9 +9,13 @@ wheels/
 # Virtual environments
 .venv
 
-.claude-flow/
+# Secrets and personal data: never committed
 .env
 .env.*
 data/
 reports/
 *.jsonl.zstd
+
+# Local tool state
+.claude-flow/
+.hdd-cache/

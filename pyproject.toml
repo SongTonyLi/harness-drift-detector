@@ -2,6 +2,9 @@
 name = "harness-drift-detector"
 version = "0.1.0"
 description = "Fast drift hotspotting for coding-agent harness transcripts"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [
     { name = "Song", email = "sl5807@columbia.edu" }
 ]
