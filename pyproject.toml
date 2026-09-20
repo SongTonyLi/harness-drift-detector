@@ -1,0 +1,33 @@
+[project]
+name = "harness-drift-detector"
+version = "0.1.0"
+description = "Fast drift hotspotting for coding-agent harness transcripts"
+authors = [
+    { name = "Song", email = "sl5807@columbia.edu" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typesafe-sdk>=0.7.0",
+    "zstandard>=0.25.0",
+]
+
+[project.scripts]
+hdd = "harness_drift_detector.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "live: hits the TypeSafe API; needs TYPESAFE_API_KEY",
+  "integration: needs every workstream implemented",
+]
