@@ -306,3 +306,27 @@ def test_detect_rejects_a_bad_override(tmp_path, capsys, value):
     )
     assert code == 2
     assert "bad --override" in capsys.readouterr().err
+
+
+@pytest.mark.integration
+def test_convert_claude_sessions_then_detect(tmp_path, capsys):
+    from tests.fixtures.claude_code import SESSION_ID, write_session_file
+
+    root = tmp_path / "projects" / "-tmp-fixture-project"
+    write_session_file(root, SESSION_ID)
+    out = tmp_path / "transcripts"
+
+    code = main(["convert", "--harness", "claude", "--root", str(root), "--out", str(out)])
+    assert code == 0
+    written = sorted(out.glob("*.jsonl"))
+    assert [p.name for p in written] == [f"{SESSION_ID}.jsonl"]
+    assert "converted 1, skipped 0" in capsys.readouterr().err
+
+    reports = tmp_path / "reports"
+    args = ["detect", str(written[0]), "--judge", "heuristic", "--out", str(reports), "--no-cache"]
+    assert main(args) == 0
+    data = json.loads((reports / f"{SESSION_ID}.json").read_text(encoding="utf-8"))
+    assert data["transcript_id"] == SESSION_ID
+    assert data["turns"] == 5
+    assert data["turns_interrupted"] == 2
+    assert data["windows_judged"] == 7

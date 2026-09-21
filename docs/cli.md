@@ -5,14 +5,18 @@
 ## `hdd convert`
 
 ```
-hdd convert --harness dsh --root DIR --out DIR [--ids ID ...] [--no-scrub]
+hdd convert --harness {dsh,claude} --root DIR --out DIR [--ids ID ...] [--no-scrub]
 ```
 
-Reads every `session-<uuid>` directory under `--root` (raw `session.v3.jsonl` or the
-zstd-compressed default), writes one canonical JSONL transcript per session into `--out`, and
-lists sessions it skipped (a header-only log has no events). `--no-scrub` keeps credential
-patterns in tool output; by default they are replaced with `[REDACTED_SECRET]` and ANSI escape
+Writes one canonical JSONL transcript per session into `--out` and lists the sessions it
+skipped (a log with no conversation has no events). `--no-scrub` keeps credential patterns
+in tool output; by default they are replaced with `[REDACTED_SECRET]` and ANSI escape
 sequences are removed.
+
+| harness | `--root` | what is read |
+| --- | --- | --- |
+| `dsh` | `~/.dsh/sessions/<encoded-cwd>` | every `session-<uuid>` directory: raw `session.v3.jsonl` or the zstd-compressed default |
+| `claude` | `~/.claude/projects/<encoded-cwd>` | every `<session-uuid>.jsonl` file. The streamed records of one response become one step; prompts queued while the assistant worked count as human messages; skill bodies, compaction summaries, task notifications, and local-command output keep origin `harness`. A turn ends at the `turn_duration` record, at a `[Request interrupted by user]` message (aborted), or at a synthetic API-error message (error); logs from versions without `turn_duration` complete a turn whose last step stopped with `end_turn`. Subagent transcripts under `<session-uuid>/subagents/` are not read. |
 
 ## `hdd detect`
 

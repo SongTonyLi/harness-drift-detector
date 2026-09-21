@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Domain | `src/harness_drift_detector/domain/` | standard library only | `Transcript` and events, `Window` and `Budget`, the probe `CATALOG` and `select_probes`, `Judgment`/`JudgeResult`/`Judge`, `DriftPolicy`/`gate`/`rank`, `DriftReport`/`build_report`, the ports |
 | Application | `src/harness_drift_detector/application/` | domain | `ConvertSessions`, `DetectDrift` (async, bounded concurrency), renderers |
-| Adapters | `src/harness_drift_detector/adapters/` | domain, SDKs | `DshSessionSource`, `JsonlTranscriptStore`, `TypeSafeJudge`, `HeuristicJudge`, `CachingJudge` + `FileJudgmentCache`, `FakeJudge`, scrubbing |
+| Adapters | `src/harness_drift_detector/adapters/` | domain, SDKs | `DshSessionSource`, `ClaudeSessionSource`, `JsonlTranscriptStore`, `TypeSafeJudge`, `HeuristicJudge`, `CachingJudge` + `FileJudgmentCache`, `FakeJudge`, scrubbing |
 | CLI | `src/harness_drift_detector/cli.py` | everything | argument parsing and wiring |
 
 `scripts/verify_layering.py` rejects imports that cross these lines.
@@ -16,7 +16,7 @@
 ## Data flow
 
 ```
-harness storage ──DshSessionSource──▶ Transcript ──JsonlTranscriptStore──▶ <id>.jsonl
+harness storage ──Dsh/ClaudeSessionSource──▶ Transcript ──JsonlTranscriptStore──▶ <id>.jsonl
 <id>.jsonl ──▶ Transcript ──build_windows──▶ Window per assistant step
 Window ──select_probes──▶ Probe[] ──Judge.judge(window.to_state(), probes)──▶ JudgeResult
 JudgeResult ──gate(policy)──▶ Hotspot | None ──build_report──▶ DriftReport ──render──▶ json / md / terminal
@@ -36,7 +36,9 @@ One judge call per window carries every applicable probe. Windows run concurrent
 {"kind":"turn_end","seq":30,"turn":1,"reason":"completed"}
 ```
 
-`origin: "harness"` marks messages the harness injected (skill catalogs, runtime snapshots); windows ignore them. Provider replay blobs and request headers are dropped. Tool result text has ANSI sequences removed and credential patterns replaced by `[REDACTED_SECRET]`.
+`origin: "harness"` marks messages the harness injected (skill catalogs, runtime snapshots, compaction summaries); windows ignore them. Provider replay blobs, request headers, and reasoning blocks are dropped. Tool result text has ANSI sequences removed and credential patterns replaced by `[REDACTED_SECRET]`.
+
+Each source maps its own log onto this form. `dsh` logs carry `turn/start` and `turn/end` events. Claude Code logs (`~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`) stream one content block per record, so `ClaudeSessionSource` merges the records sharing a `message.id` into one step, treats a human prompt as the start of a turn, and derives `turn_end` from the `turn_duration` record, an interruption message, or a synthetic API-error message, falling back to the last step's `end_turn` stop reason for older logs ([decision](../.agents/notes/implemented/architecture/2026-09-20-harness-sources-map-turns-in-file-order.md)).
 
 ## Windows
 
@@ -53,5 +55,5 @@ Nine probes in `domain/probes.py`: `user.off_task`, `adjacent.ignores_previous`,
 ## Extension points
 
 - **Judge provider:** implement `Judge` from `domain/judgment.py` (`name`, `model`, `async judge(state, probes) -> JudgeResult`) in `adapters/`. Translate each `NoulProbe` into a yes/no question with explicit true/false criteria and each `ScoreProbe` into an ordered level scale (probability = `score / (len(levels) - 1)`); return one `Judgment` per probe id plus model name, usage, and latency. Add the name to the `--judge` choices and `_build_judge` in `cli.py`; `CachingJudge` wraps it for free. Procedure: [hdd-add-judge-provider](../.agents/skills/hdd-add-judge-provider/SKILL.md).
-- **Harness source:** implement `TranscriptSource` from `domain/ports.py` (`harness`, `list_ids()`, `load(id)`) in `adapters/` so it returns a `Transcript` in the canonical form above, then add it to `--harness` in `cli.py`. Windowing, probes, policy, report, and renderers are harness-agnostic.
+- **Harness source:** implement `TranscriptSource` from `domain/ports.py` (`harness`, `list_ids()`, `load(id)`) in `adapters/` so it returns a `Transcript` in the canonical form above, with a synthetic fixture under `tests/fixtures/` and a `--harness` choice in `cli.py`. `adapters/claude_source.py` is the second source and the template: decide which records are human prompts, which are harness-injected, how a streamed response becomes one step, and what ends a turn. Windowing, probes, policy, report, and renderers are harness-agnostic.
 - **Probe:** add a `NoulProbe`/`ScoreProbe` to `CATALOG` with a precondition in `select_probes`, a domain test, and a README row.

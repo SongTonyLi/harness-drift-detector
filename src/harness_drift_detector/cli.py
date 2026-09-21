@@ -43,9 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     convert = sub.add_parser("convert", help="convert harness sessions to canonical JSONL")
-    convert.add_argument("--harness", default="dsh", choices=["dsh"])
     convert.add_argument(
-        "--root", required=True, type=Path, help="directory holding session-<uuid> dirs"
+        "--harness",
+        default="dsh",
+        choices=["dsh", "claude"],
+        help="dsh: ~/.dsh/sessions/<encoded-cwd>. claude: ~/.claude/projects/<encoded-cwd>",
+    )
+    convert.add_argument(
+        "--root", required=True, type=Path, help="the harness's per-project sessions directory"
     )
     convert.add_argument(
         "--out", required=True, type=Path, help="output directory for .jsonl transcripts"
@@ -87,13 +92,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def cmd_convert(args: argparse.Namespace) -> int:
+def _build_source(args: argparse.Namespace):
+    if args.harness == "claude":
+        from .adapters.claude_source import ClaudeSessionSource
+
+        return ClaudeSessionSource(args.root, scrub=not args.no_scrub)
     from .adapters.dsh_source import DshSessionSource
+
+    return DshSessionSource(args.root, scrub=not args.no_scrub)
+
+
+def cmd_convert(args: argparse.Namespace) -> int:
     from .adapters.jsonl_store import JsonlTranscriptStore
     from .application.convert import ConvertSessions
 
-    source = DshSessionSource(args.root, scrub=not args.no_scrub)
-    summary = ConvertSessions(source, JsonlTranscriptStore()).run(args.out, args.ids)
+    summary = ConvertSessions(_build_source(args), JsonlTranscriptStore()).run(args.out, args.ids)
     for path in summary.converted:
         print(path)
     for transcript_id, reason in summary.skipped:

@@ -31,6 +31,7 @@ judgments without paying for inference again.
 ```bash
 uv sync
 uv run hdd convert --harness dsh --root ~/.dsh/sessions/<encoded-cwd> --out data/transcripts
+uv run hdd convert --harness claude --root ~/.claude/projects/<encoded-cwd> --out data/transcripts
 export TYPESAFE_API_KEY=...    # read from the environment only, never stored
 uv run hdd detect data/transcripts/*.jsonl --judge typesafe --out reports
 uv run hdd hotspots reports/<transcript-id>.json --top 10
@@ -46,8 +47,9 @@ On the author's own sessions, judged with `jev-1.13.0` at the default threshold:
 
 | corpus | windows | hotspots | what they were |
 | --- | --- | --- | --- |
-| 5 sessions | 24 | 2 | exactly the two steps a reader marks as drift, at 0.88 to 0.94; no other probe above 0.58 |
-| 74 sessions | 4,068 | 295 (7.3%) | plus 35 interrupted turns reported separately; two thirds of the hotspots are `tool.unsupported_claim` on narration steps and long final summaries, a triage choice tunable with `--override tool.unsupported_claim=0.9` |
+| 5 dsh sessions | 24 | 2 | exactly the two steps a reader marks as drift, at 0.88 to 0.94; no other probe above 0.58 |
+| 74 dsh sessions | 4,068 | 295 (7.3%) | plus 35 interrupted turns reported separately; two thirds of the hotspots are `tool.unsupported_claim` on narration steps and long final summaries, a triage choice tunable with `--override tool.unsupported_claim=0.9` |
+| 31 Claude Code sessions | 3,937 | 701 (17.8%) | plus 19 interrupted turns; again two thirds `tool.unsupported_claim`, but 386 of those are mid-turn narration, where the window shows one tool result because the turn digest reaches only turn-ending steps. A window gap, not a threshold to tune |
 
 A session takes about a second; the 74-session run spent 8M input tokens, roughly a third of
 a dollar at Jev's published rate. The first window design flagged 16.7% of steps; the drop to
@@ -61,7 +63,7 @@ Domain-driven, so the judge is a port and TypeSafe is one provider behind it:
 ```
 domain/       pure: transcript, windows, probe catalog, judgments, policy, report, ports
 application/  use cases: convert, detect, render
-adapters/     dsh session source, JSONL store, TypeSafe / heuristic / caching / fake judges
+adapters/     dsh and Claude Code session sources, JSONL store, TypeSafe / heuristic / caching / fake judges
 cli.py        wiring
 ```
 
