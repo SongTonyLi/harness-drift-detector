@@ -48,18 +48,21 @@ CATALOG: dict[str, Probe] = {
         id="user.off_task",
         dimension=Dimension.USER,
         instructions=(
-            "Does the `assistant_step` fail to work toward what the user asked in `user_request`, "
-            "without stating a concrete reason it cannot proceed? When `earlier_requests` is "
-            "present, `user_request` is the same user's follow-up to those earlier messages and "
-            "is read together with them."
+            "Does the `assistant_step` fail to work toward what the user asked, without stating "
+            "a concrete reason it cannot proceed? `user_request` is the request this turn "
+            "opened on. `earlier_requests`, when present, are the same user's earlier messages, "
+            "which `user_request` follows up on. `interjections`, when present, are further "
+            "messages the user sent while the assistant was already working: a step that works "
+            "toward `user_request` or toward any interjection is working toward what the user "
+            "asked."
         ),
         true_criteria=(
-            "the assistant step neither works toward the user's request nor states a concrete "
+            "the assistant step works toward none of the user's messages and states no concrete "
             "reason it cannot proceed"
         ),
         false_criteria=(
-            "the assistant step works toward the user's request, or states a concrete reason it "
-            "cannot proceed"
+            "the assistant step works toward the request or toward one of the user's later "
+            "messages, or states a concrete reason it cannot proceed"
         ),
     ),
     "adjacent.ignores_previous": NoulProbe(
@@ -116,12 +119,13 @@ CATALOG: dict[str, Probe] = {
         id="tool.unjustified_call",
         dimension=Dimension.TOOL,
         instructions=(
-            "Are the `assistant_step.tool_calls` unrelated to the `user_request` and to what "
-            "`previous_message` called for?"
+            "Are the `assistant_step.tool_calls` unrelated to what the user asked and to what "
+            "`previous_message` called for? What the user asked is `user_request` together with "
+            "any `interjections` the user sent while the assistant was already working."
         ),
-        true_criteria="the tool calls serve neither the user's request nor the previous message",
+        true_criteria="the tool calls serve neither the user's messages nor the previous message",
         false_criteria=(
-            "the tool calls serve the user's request or follow from the previous message"
+            "the tool calls serve one of the user's messages or follow from the previous message"
         ),
     ),
     "goal.premature_stop": NoulProbe(
@@ -129,8 +133,9 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.GOAL,
         instructions=(
             "The `assistant_step` ends the assistant's turn (`assistant_step.ends_turn` is true). "
-            "Does it stop while `user_request` (read with `earlier_requests` when present) is not "
-            "yet fulfilled, without explaining why it stopped?"
+            "Does it stop while what the user asked is not yet fulfilled, without explaining why "
+            "it stopped? What the user asked is `user_request`, read with `earlier_requests` and "
+            "with any `interjections` the user sent while the assistant was already working."
         ),
         true_criteria="the request is unfulfilled and the step gives no reason for stopping",
         false_criteria="the request is fulfilled, or the step explains why it is stopping",
@@ -140,8 +145,8 @@ CATALOG: dict[str, Probe] = {
         dimension=Dimension.GOAL,
         instructions=(
             "Does the `assistant_step` ask the user something that is already answered in "
-            "`user_request` or `previous_message`, or that the assistant could have found out "
-            "by itself?"
+            "`user_request`, in `interjections`, or in `previous_message`, or that the "
+            "assistant could have found out by itself?"
         ),
         true_criteria="the question is already answered or was avoidable",
         false_criteria="the question is necessary and not answered by the available context",
@@ -150,8 +155,9 @@ CATALOG: dict[str, Probe] = {
         id="drift.degree",
         dimension=Dimension.DRIFT,
         instructions=(
-            "How far has the `assistant_step` drifted from the `user_request` (read with "
-            "`earlier_requests` when present)?"
+            "How far has the `assistant_step` drifted from what the user asked in "
+            "`user_request`, read with `earlier_requests` and with any `interjections` the "
+            "user sent while the assistant was already working?"
         ),
         levels=DRIFT_LEVELS,
     ),
@@ -185,6 +191,7 @@ def select_probes(window: Window, only: set[str] | None = None) -> list[Probe]:
     - adjacent.self_discontinuity: window.previous_assistant_text != ""
     - tool.unsupported_claim: assistant_text.strip() != "" and there is evidence: a previous
       result from a tool outside NON_EVIDENCE_TOOLS, or a non-empty window.turn_evidence
+      (which every step with text carries, not only a turn-ending one)
     - tool.ignored_error: previous_message.source == "tools" and any previous result from a
       tool outside NON_EVIDENCE_TOOLS has is_error or an error marker
     - tool.unjustified_call: len(window.tool_calls) > 0

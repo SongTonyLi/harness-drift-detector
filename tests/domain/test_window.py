@@ -416,3 +416,119 @@ def test_turn_evidence_leaves_out_bookkeeping_tools():
     final = build_windows(t)[-1]
     assert [r.tool for r in final.previous_message.results] == ["send_message"]
     assert [(r.step, r.tool, r.text) for r in final.turn_evidence] == [(2, "bash", "3 passed")]
+
+
+def _interjected_turn():
+    """The user asks for a publish, then asks something else while it is still running."""
+    return Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "set up the repo", "human"),
+            AssistantEvent(2, 1, 1, "done", (), "stop"),
+            TurnEndEvent(3, 1, "completed"),
+            UserEvent(4, 2, "publish to npm", "human"),
+            AssistantEvent(
+                5, 2, 1, "", (ToolCall("c1", "bash", '{"command":"npm publish"}'),), "toolUse"
+            ),
+            ToolResultEvent(6, 2, 1, "c1", "bash", "+ pkg@1.0.0", False),
+            UserEvent(7, 2, "where is the authenticator code", "human"),
+            AssistantEvent(8, 2, 2, "Published. Verifying the install.", (), "stop"),
+            TurnEndEvent(9, 2, "completed"),
+        ),
+    )
+
+
+def test_a_message_sent_after_the_turn_began_does_not_become_the_request():
+    w1, publish, after = build_windows(_interjected_turn())
+    assert w1.user_request == "set up the repo"
+    assert publish.user_request == "publish to npm" and publish.interjections == ()
+    assert after.user_request == "publish to npm"
+    assert after.interjections == ("where is the authenticator code",)
+    assert after.earlier_requests == ("set up the repo",)
+    state = after.to_state()
+    assert state["user_request"] == "publish to npm"
+    assert state["interjections"] == ["where is the authenticator code"]
+    assert "interjections" not in publish.to_state()
+
+
+def test_an_interjection_opens_the_next_turn_when_the_turn_is_over():
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "publish to npm", "human"),
+            AssistantEvent(2, 1, 1, "published", (), "stop"),
+            TurnEndEvent(3, 1, "completed"),
+            UserEvent(4, 2, "where is the authenticator code", "human"),
+            AssistantEvent(5, 2, 1, "in auth.py", (), "stop"),
+        ),
+    )
+    _, answer = build_windows(t)
+    assert answer.user_request == "where is the authenticator code"
+    assert answer.interjections == () and answer.earlier_requests == ("publish to npm",)
+
+
+def test_interjections_are_bounded_in_count_and_length():
+    events = [
+        UserEvent(1, 1, "start", "human"),
+        AssistantEvent(2, 1, 1, "", (ToolCall("c1", "bash", "{}"),), "toolUse"),
+    ]
+    seq = 3
+    for i in range(4):
+        events.append(UserEvent(seq, 1, f"note {i} " + "y" * 50, "human"))
+        seq += 1
+    events.append(AssistantEvent(seq, 1, 2, "ok", (), "stop"))
+    t = Transcript(TranscriptHeader("s1", "dsh", "/p"), tuple(events))
+    last = build_windows(t, Budget(interjection=10, interjections_max=2))[-1]
+    assert [text[:6] for text in last.interjections] == ["note 2", "note 3"]
+    assert all(OMITTED_MARKER.split("{")[0] in text for text in last.interjections)
+    assert last.user_request == "start"
+
+
+def test_a_step_that_says_something_mid_turn_sees_the_turn_evidence():
+    """A narration step claims what the turn established, not only the previous result."""
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "run the suite", "human"),
+            AssistantEvent(
+                2, 1, 1, "", (ToolCall("c1", "bash", '{"command":"pytest"}'),), "toolUse"
+            ),
+            ToolResultEvent(3, 1, 1, "c1", "bash", "3 passed", False),
+            AssistantEvent(4, 1, 2, "", (ToolCall("c2", "bash", '{"command":"ruff"}'),), "toolUse"),
+            ToolResultEvent(5, 1, 2, "c2", "bash", "All checks passed", False),
+            AssistantEvent(
+                6,
+                1,
+                3,
+                "Tests and lint are green. Now the build.",
+                (ToolCall("c3", "bash", '{"command":"build"}'),),
+                "toolUse",
+            ),
+            ToolResultEvent(7, 1, 3, "c3", "bash", "built", False),
+            AssistantEvent(8, 1, 4, "Shipped.", (), "stop"),
+            TurnEndEvent(9, 1, "completed"),
+        ),
+    )
+    _, _, narration, final = build_windows(t)
+    assert not narration.ends_turn
+    assert [(r.step, r.text) for r in narration.turn_evidence] == [(1, "3 passed")]
+    assert narration.to_state()["turn_evidence"][0]["text"] == "3 passed"
+    assert [(r.step, r.text) for r in final.turn_evidence] == [
+        (1, "3 passed"),
+        (2, "All checks passed"),
+    ]
+
+
+def test_a_step_with_no_text_claims_nothing_and_gets_no_turn_evidence():
+    t = Transcript(
+        TranscriptHeader("s1", "dsh", "/p"),
+        (
+            UserEvent(1, 1, "run the suite", "human"),
+            AssistantEvent(2, 1, 1, "", (ToolCall("c1", "bash", "{}"),), "toolUse"),
+            ToolResultEvent(3, 1, 1, "c1", "bash", "3 passed", False),
+            AssistantEvent(4, 1, 2, "", (ToolCall("c2", "bash", "{}"),), "toolUse"),
+            ToolResultEvent(5, 1, 2, "c2", "bash", "ok", False),
+            AssistantEvent(6, 1, 3, "   ", (ToolCall("c3", "bash", "{}"),), "toolUse"),
+        ),
+    )
+    assert [w.turn_evidence for w in build_windows(t)] == [(), (), ()]

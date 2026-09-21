@@ -35,12 +35,16 @@ class Budget:
     previous_assistant_text: int = 2000
     assistant_text: int = 4000
     arguments: int = 1200
-    # A turn-ending step also sees earlier results of its turn: each bounded, total bounded.
+    # A step that says something also sees the earlier results of its turn: each bounded,
+    # total bounded.
     turn_evidence_result: int = 600
     turn_evidence_total: int = 6000
     # Earlier human messages of the session, so a short follow-up keeps its original task.
     earlier_request: int = 600
     earlier_requests_max: int = 3
+    # Messages the user sent after the turn began; a live instruction, so a larger share.
+    interjection: int = 1200
+    interjections_max: int = 3
 
 
 # Tools whose output records bookkeeping (a delivered message, an updated list, a loaded
@@ -74,6 +78,11 @@ def truncate(text: str, head: int, tail: int = 0) -> str:
     return text[:keep_head] + marker + text[-keep_tail:]
 
 
+def _tail(items: list[str], count: int) -> list[str]:
+    """The last `count` items, oldest first; empty when `count` is not positive."""
+    return items[-count:] if count > 0 else []
+
+
 def _assistant_split(budget: Budget) -> tuple[int, int]:
     """Head and tail shares of the step text budget; their sum is the budget."""
     tail = min(ASSISTANT_TEXT_TAIL, max(budget.assistant_text, 0) // 4)
@@ -105,7 +114,7 @@ class StepCall:
 
 @dataclass(frozen=True)
 class TurnResult:
-    """An earlier tool result of the same turn, shown only to a turn-ending step."""
+    """An earlier tool result of the same turn, shown to a step whose text makes claims."""
 
     step: int
     tool: str
@@ -126,11 +135,12 @@ class Window:
     assistant_text: str
     tool_calls: tuple[StepCall, ...] = ()
     ends_turn: bool = False
-    turn_evidence: tuple[TurnResult, ...] = ()  # earlier results of the turn; ends_turn only
+    turn_evidence: tuple[TurnResult, ...] = ()  # earlier results of the turn; claiming steps
     turn_end_reason: str | None = (
         None  # the turn_end event's reason; None when the turn never ended
     )
     earlier_requests: tuple[str, ...] = ()  # the user's earlier messages, oldest first, bounded
+    interjections: tuple[str, ...] = ()  # what the user said after this turn began, bounded
 
     @property
     def turn_completed(self) -> bool:
@@ -149,8 +159,9 @@ class Window:
                               | {"from": "tools", "results": [{"tool","input","is_error","text"}]},
           "previous_assistant_text": str,
           "assistant_step": {"text": str, "tool_calls": [{"tool","arguments"}], "ends_turn": bool},
-          "turn_evidence": [{"step","tool","input","is_error","text"}],  # only when non-empty
-          "earlier_requests": [str, ...]                                  # only when non-empty
+          "earlier_requests": [str, ...],                                 # only when non-empty
+          "interjections": [str, ...],                                    # only when non-empty
+          "turn_evidence": [{"step","tool","input","is_error","text"}]    # only when non-empty
         }
         """
         if self.previous_message.source == "user":
@@ -175,6 +186,8 @@ class Window:
         }
         if self.earlier_requests:
             state["earlier_requests"] = list(self.earlier_requests)
+        if self.interjections:
+            state["interjections"] = list(self.interjections)
         if self.turn_evidence:
             state["turn_evidence"] = [
                 {
@@ -192,8 +205,10 @@ class Window:
 def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Window]:
     """One Window per AssistantEvent, in seq order.
 
-    - user_request: text of the latest UserEvent with origin == "human" before the step
-      (already truncated to budget.user_request). Harness-injected user messages are ignored.
+    - user_request: the human message the step's turn opened on, truncated to
+      budget.user_request. Harness-injected user messages are ignored. A message the user
+      sent after the turn began does not replace it: the rest of the turn is still answering
+      the request it started on, and the new message arrives as an interjection.
     - previous_message: for the first assistant step of a turn, {"user", text of the latest
       human message}. For later steps whose previous step made tool calls, {"tools", that
       step's results, each with the call's input and its text truncated head/tail} (empty
@@ -205,15 +220,17 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
     - assistant_text: this step's text, truncated head and tail so the ending survives.
       tool_calls: this step's calls with arguments truncated (head only).
     - ends_turn: True when no later AssistantEvent exists in the same turn.
-    - turn_evidence: for a turn-ending step only, the results of every earlier step of the
-      turn except the previous step (whose results are already previous_message), most
-      recent first while budget.turn_evidence_total lasts, in chronological order. A final
-      summary claims things established across the turn, not only by the previous step.
-      Results of NON_EVIDENCE_TOOLS are left out.
+    - turn_evidence: for a step whose text says something, the results of every earlier step
+      of the turn except the previous step (whose results are already previous_message), most
+      recent first while budget.turn_evidence_total lasts, in chronological order. A step
+      narrates what the turn established, not only what the previous step returned, whether
+      it ends the turn or keeps working. Results of NON_EVIDENCE_TOOLS are left out.
     - turn_end_reason: the reason of the turn's TurnEndEvent, None when there is none. A
       turn that was aborted or errored did not end by the assistant's choice.
     - earlier_requests: the human messages before user_request, oldest first, the last
       budget.earlier_requests_max of them, each truncated to budget.earlier_request.
+    - interjections: the human messages after the turn opened, oldest first, the last
+      budget.interjections_max of them, each truncated to budget.interjection.
     """
     events = sorted(transcript.events, key=lambda event: event.seq)
     text_head, text_tail = _assistant_split(budget)
@@ -227,8 +244,9 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
             turn_end_reasons[event.turn] = event.reason
 
     windows: list[Window] = []
-    latest_human = ""
     human_history: list[str] = []
+    request_index = -1  # index in human_history of the request the current turn opened on
+    current_turn: int | None = None
     previous_assistant: AssistantEvent | None = None
     pending_results: list[ToolResultEvent] = []
     turn_history: list[tuple[AssistantEvent, tuple[ToolOutcome, ...]]] = []
@@ -236,7 +254,6 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
     for event in events:
         if isinstance(event, UserEvent):
             if event.origin == "human":
-                latest_human = event.text
                 human_history.append(event.text)
             continue
         if isinstance(event, ToolResultEvent):
@@ -245,11 +262,17 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
         if not isinstance(event, AssistantEvent):
             continue
 
-        if previous_assistant is not None and previous_assistant.turn != event.turn:
+        if current_turn != event.turn:  # a new turn opens on the latest human message
+            current_turn = event.turn
+            request_index = len(human_history) - 1
             previous_assistant = None
             turn_history = []
 
-        user_request = truncate(latest_human, budget.user_request)
+        user_request = (
+            truncate(human_history[request_index], budget.user_request)
+            if request_index >= 0
+            else ""
+        )
         ends_turn = event.seq == last_step_seq.get(event.turn)
 
         if previous_assistant is not None:
@@ -289,11 +312,19 @@ def build_windows(transcript: Transcript, budget: Budget = Budget()) -> list[Win
                     for call in event.tool_calls
                 ),
                 ends_turn=ends_turn,
-                turn_evidence=_turn_evidence(turn_history[:-1], budget) if ends_turn else (),
+                turn_evidence=(
+                    _turn_evidence(turn_history[:-1], budget) if event.text.strip() else ()
+                ),
                 turn_end_reason=turn_end_reasons.get(event.turn),
                 earlier_requests=tuple(
                     truncate(text, budget.earlier_request)
-                    for text in human_history[:-1][-max(budget.earlier_requests_max, 0) :]
+                    for text in _tail(
+                        human_history[: max(request_index, 0)], budget.earlier_requests_max
+                    )
+                ),
+                interjections=tuple(
+                    truncate(text, budget.interjection)
+                    for text in _tail(human_history[request_index + 1 :], budget.interjections_max)
                 ),
             )
         )
