@@ -42,7 +42,9 @@ Each source maps its own log onto this form. `dsh` logs carry `turn/start` and `
 
 ## Windows
 
-One per assistant step: `user_request` (latest human message) with `earlier_requests` (the session's previous human messages, bounded), `previous_message` (the user message for a turn's first step, otherwise the previous step's tool results, each with the call's `input`), `previous_assistant_text`, `assistant_step` (text, tool calls, `ends_turn`), `turn_evidence` on a turn-ending step (a bounded digest of the turn's earlier results from real tools), and `turn_end_reason`. Results of bookkeeping tools (`NON_EVIDENCE_TOOLS` in `domain/window.py`) are never evidence. `Budget` bounds each field with an explicit omitted-chars marker. The system prompt is never included.
+One per assistant step: `user_request` (the human message the step's turn opened on) with `earlier_requests` (human messages before it) and `interjections` (human messages after the turn began), `previous_message` (the user message for a turn's first step, otherwise the previous step's tool results, each with the call's `input`), `previous_assistant_text`, `assistant_step` (text, tool calls, `ends_turn`), `turn_evidence` on any step whose text makes claims (a bounded digest of the turn's earlier results from real tools), and `turn_end_reason`. Results of bookkeeping tools (`NON_EVIDENCE_TOOLS` in `domain/window.py`) are never evidence. `Budget` bounds each field with an explicit omitted-chars marker. The system prompt is never included.
+
+A step is judged against its own turn ([decision](../.agents/notes/implemented/architecture/2026-09-21-a-step-is-judged-against-its-own-turn.md)): a prompt the user queues mid-turn does not silently become the request the earlier steps are measured against, and a step that narrates progress sees what the turn established rather than only the last tool result.
 
 ## Probes
 

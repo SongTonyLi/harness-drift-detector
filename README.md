@@ -47,14 +47,15 @@ On the author's own sessions, judged with `jev-1.13.0` at the default threshold:
 
 | corpus | windows | hotspots | what they were |
 | --- | --- | --- | --- |
-| 5 dsh sessions | 24 | 2 | exactly the two steps a reader marks as drift, at 0.88 to 0.94; no other probe above 0.58 |
-| 74 dsh sessions | 4,068 | 295 (7.3%) | plus 35 interrupted turns reported separately; two thirds of the hotspots are `tool.unsupported_claim` on narration steps and long final summaries, a triage choice tunable with `--override tool.unsupported_claim=0.9` |
-| 31 Claude Code sessions | 3,937 | 701 (17.8%) | plus 19 interrupted turns; again two thirds `tool.unsupported_claim`, but 386 of those are mid-turn narration, where the window shows one tool result because the turn digest reaches only turn-ending steps. A window gap, not a threshold to tune |
+| 5 dsh sessions | 24 | 2 | exactly the two steps a reader marks as drift, at 0.88 and 0.91; no other probe above 0.6 |
+| 74 dsh sessions | 4,068 | 252 (6.2%) | plus 35 interrupted turns reported separately; 155 of the 252 are `tool.unsupported_claim` |
+| 31 Claude Code sessions | 3,937 | 551 (14.0%) | plus 19 interrupted turns; 402 are `tool.unsupported_claim`, and most of those are steps whose supporting evidence reached the agent as a background-task notification rather than as a tool result, so the window never held it |
 
-A session takes about a second; the 74-session run spent 8M input tokens, roughly a third of
-a dollar at Jev's published rate. The first window design flagged 16.7% of steps; the drop to
-7.3% came from showing the judge each tool call's input, the session's earlier requests, only
-real-tool results as evidence, and how each turn ended, not from tuning the model.
+A session takes about a second; the 74-session run spent 10M input tokens, well under a
+dollar at Jev's published rate. Every drop in that column came from fixing what the window
+showed, never from tuning the model or the threshold: the first design flagged 16.7% of dsh
+steps, showing each tool call's input and how the turn ended took it to 7.3%, and judging a
+step against its own turn took it to 6.2%.
 
 ## How it is built
 
@@ -67,11 +68,12 @@ adapters/     dsh and Claude Code session sources, JSONL store, TypeSafe / heuri
 cli.py        wiring
 ```
 
-A window carries only what a probe reads: the request and the session's earlier requests,
-the message being answered with each tool call's input and output, the step itself, and for
-a turn-ending step a bounded digest of the turn's evidence. All probes for a window go in
-one call; windows run concurrently. The transcript format, the layers, and the extension
-points for a new judge or harness are in [docs/architecture.md](docs/architecture.md).
+A window carries only what a probe reads: the request its turn opened on, the session's
+earlier requests, anything the user said after the turn began, the message being answered
+with each tool call's input and output, the step itself, and for a step that makes claims
+a bounded digest of the turn's evidence. All probes for a window go in one call; windows
+run concurrently. The transcript format, the layers, and the extension points for a new
+judge or harness are in [docs/architecture.md](docs/architecture.md).
 Contributors and agents start at [AGENTS.md](AGENTS.md); decisions are recorded under
 [.agents/notes](.agents/notes/README.md).
 

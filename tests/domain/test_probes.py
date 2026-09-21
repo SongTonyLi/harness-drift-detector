@@ -286,3 +286,32 @@ def test_ignored_error_is_not_asked_for_a_failed_skill_lookup():
         source="tools", results=(ToolOutcome("bash", False, "boom\n[exit code: 1]"),)
     )
     assert "tool.ignored_error" in _ids(replace(base, previous_message=real))
+
+
+def test_unsupported_claim_is_asked_for_a_mid_turn_narration_step():
+    """Narration happens mid-turn too, and its turn evidence makes the claim checkable."""
+    from harness_drift_detector.domain.window import TurnResult
+
+    base = build_windows(_transcript())[1]
+    mid_turn = replace(
+        base,
+        ends_turn=False,
+        assistant_text="Tests and lint are green.",
+        previous_message=PreviousMessage(source="tools", results=()),
+        turn_evidence=(TurnResult(step=1, tool="bash", input="pytest", is_error=False, text="ok"),),
+    )
+    assert "tool.unsupported_claim" in _ids(mid_turn)
+
+
+def test_probes_that_read_the_request_also_name_interjections():
+    """A message the user sends mid-turn is still something the user asked, so every probe
+    that judges a step against the request must read `interjections` too."""
+    reads_request = [
+        "user.off_task",
+        "tool.unjustified_call",
+        "goal.premature_stop",
+        "goal.unnecessary_question",
+        "drift.degree",
+    ]
+    for probe_id in reads_request:
+        assert "`interjections`" in CATALOG[probe_id].instructions, probe_id
